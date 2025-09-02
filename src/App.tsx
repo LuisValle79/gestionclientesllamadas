@@ -1,6 +1,4 @@
 import { useState } from 'react';
-import reactLogo from './assets/react.svg';
-import viteLogo from '/vite.svg';
 import './App.css';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
@@ -12,8 +10,7 @@ import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import { Menu as MenuIcon } from '@mui/icons-material';
-import { AuthProvider } from './context/AuthContext';
-//import { ErrorBoundary } from './components/ErrorBoundary';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import LoadingIndicator from './components/LoadingIndicator';
 import Login from './pages/Login';
 import Navigation from './components/Navigation';
@@ -22,7 +19,6 @@ import Clientes from './pages/Clientes';
 import Mensajes from './pages/Mensajes';
 import Recordatorios from './pages/Recordatorios';
 import Usuarios from './pages/Usuarios';
-import { useAuth } from './context/AuthContext';
 
 // Tema personalizado
 const theme = createTheme({
@@ -43,118 +39,48 @@ const theme = createTheme({
       default: '#F8F9FA',
       paper: '#FFFFFF',
     },
-    error: {
-      main: '#D32F2F',
-      light: '#EF5350',
-    },
-    warning: {
-      main: '#F9A825',
-      light: '#FFD54F',
-    },
-    info: {
-      main: '#0288D1',
-      light: '#4FC3F7',
-    },
-    success: {
-      main: '#388E3C',
-      light: '#81C784',
-    },
-    text: {
-      primary: '#212121',
-      secondary: '#757575',
-    },
   },
   typography: {
     fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-    h4: {
-      fontWeight: 600,
-    },
-    h5: {
-      fontWeight: 500,
-    },
-    h6: {
-      fontWeight: 500,
-    },
-    button: {
-      textTransform: 'none',
-      fontWeight: 500,
-    },
+    h4: { fontWeight: 600 },
+    h5: { fontWeight: 500 },
+    h6: { fontWeight: 500 },
+    button: { textTransform: 'none', fontWeight: 500 },
   },
-  shape: {
-    borderRadius: 8,
-  },
+  shape: { borderRadius: 8 },
   components: {
-    MuiButton: {
+    MuiAppBar: {
       styleOverrides: {
-        root: {
-          boxShadow: 'none',
-          '&:hover': {
-            boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
-          },
-        },
+        root: { boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.05)' },
       },
     },
     MuiPaper: {
       styleOverrides: {
-        root: {
-          boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)',
-        },
-      },
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)',
-          borderRadius: 8,
-        },
-      },
-    },
-    MuiTableCell: {
-      styleOverrides: {
-        head: {
-          fontWeight: 600,
-          backgroundColor: '#F8F9FA',
-        },
-      },
-    },
-    MuiAppBar: {
-      styleOverrides: {
-        root: {
-          boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.05)',
-        },
+        root: { boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)' },
       },
     },
   },
 });
 
-// Componente para rutas protegidas
+// Rutas protegidas
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
-
-  if (loading) {
-    return <LoadingIndicator fullScreen message="Cargando aplicación..." />;
-  }
+  if (loading) return <LoadingIndicator fullScreen message="Cargando aplicación..." />;
   if (!user) return <Navigate to="/login" />;
-
   return <>{children}</>;
 };
 
-// Componente para el contenido principal
+// Contenido principal
 const AppContent = () => {
   const { user } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const handleDrawerToggle = () => {
-    setMobileOpen(!mobileOpen);
-  };
+  if (!user) return <Navigate to="/login" />;
 
-  if (!user) {
-    return <Navigate to="/login" />;
-  }
+  const handleDrawerToggle = () => setMobileOpen(!mobileOpen);
 
-  // Mapa de títulos para cada ruta
   const routeTitles: { [key: string]: string } = {
     '/dashboard': 'Dashboard',
     '/clientes': 'Clientes',
@@ -162,20 +88,15 @@ const AppContent = () => {
     '/recordatorios': 'Recordatorios',
     '/usuarios': 'Usuarios',
   };
-
   const currentPath = window.location.pathname;
   const pageTitle = routeTitles[currentPath] || 'Gestión de Clientes';
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: theme.palette.background.default }}>
-      {/* AppBar para escritorio y móviles */}
+      {/* Barra superior */}
       <AppBar
         position="fixed"
-        sx={{
-          zIndex: theme.zIndex.drawer + 1,
-          bgcolor: theme.palette.primary.main,
-          display: { xs: 'block', md: 'block' },
-        }}
+        sx={{ zIndex: theme.zIndex.drawer + 1, bgcolor: theme.palette.primary.main }}
       >
         <Toolbar>
           {isMobile && (
@@ -195,10 +116,10 @@ const AppContent = () => {
         </Toolbar>
       </AppBar>
 
-      {/* Componente Navigation con prop para controlar el estado del Drawer */}
+      {/* Sidebar */}
       <Navigation mobileOpen={mobileOpen} handleDrawerToggle={handleDrawerToggle} />
 
-      {/* Área de contenido principal */}
+      {/* Contenido principal */}
       <Box
         component="main"
         sx={{
@@ -206,28 +127,25 @@ const AppContent = () => {
           p: { xs: 2, md: 3 },
           width: isMobile ? '100%' : 'calc(100% - 250px)',
           ml: isMobile ? 0 : '250px',
-          mt: theme.mixins.toolbar.minHeight, // Espacio para el AppBar
           bgcolor: theme.palette.background.paper,
           borderRadius: theme.shape.borderRadius,
-          minHeight: `calc(100vh - ${theme.mixins.toolbar.minHeight}px)`,
+          minHeight: '100vh',
           boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)',
-          transition: theme.transitions.create(['margin', 'width'], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
+          display: 'flex',
+          flexDirection: 'column',
         }}
-        aria-label="Contenido principal"
       >
-        
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/clientes" element={<Clientes />} />
-            <Route path="/mensajes" element={<Mensajes />} />
-            <Route path="/recordatorios" element={<Recordatorios />} />
-            <Route path="/usuarios" element={<Usuarios />} />
-          </Routes>
-        
+        {/* Espaciador para el AppBar */}
+        <Toolbar />
+        {/* Aquí van las páginas */}
+        <Routes>
+          <Route path="/" element={<Navigate to="/dashboard" />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/clientes" element={<Clientes />} />
+          <Route path="/mensajes" element={<Mensajes />} />
+          <Route path="/recordatorios" element={<Recordatorios />} />
+          <Route path="/usuarios" element={<Usuarios />} />
+        </Routes>
       </Box>
     </Box>
   );

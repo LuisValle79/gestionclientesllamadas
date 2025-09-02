@@ -6,6 +6,7 @@ import {
   Chip, Divider, useTheme
 } from '@mui/material';
 import Grid from '@mui/material/Grid'; // Usar Grid estándar
+
 import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon, Notifications as NotificationsIcon } from '@mui/icons-material';
 import type { SelectChangeEvent } from '@mui/material';
 import { supabase } from '../services/supabase';
@@ -317,7 +318,8 @@ const Recordatorios = () => {
         <Grid container spacing={2}>
           {recordatorios.length > 0 ? (
             recordatorios.map((recordatorio) => (
-              <Grid xs={12} sm={6} md={4} key={recordatorio.id}>
+              <Grid item xs={12} sm={6} md={4} key={recordatorio.id}>
+
                 <Paper
                   sx={{
                     position: 'relative',
@@ -417,7 +419,8 @@ const Recordatorios = () => {
               </Grid>
             ))
           ) : (
-            <Grid xs={12}>
+            <Grid item xs={12}>
+
               <Paper sx={{ 
                 p: 4, 
                 textAlign: 'center', 
