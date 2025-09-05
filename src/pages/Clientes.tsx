@@ -5,7 +5,7 @@ import {
   DialogTitle, IconButton, CircularProgress, Snackbar, Alert, TablePagination,
   Tabs, Tab, Chip, Tooltip, FormControl, InputLabel, Select, MenuItem, useTheme,
 } from '@mui/material';
-import Grid from '@mui/material/Grid';
+import { Grid } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -506,7 +506,7 @@ const Clientes = () => {
 
             {tabValue === 0 && (
               <Grid container spacing={2}>
-                <Grid item={true} xs={12} md={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
                     autoFocus
                     margin="dense"
@@ -520,7 +520,7 @@ const Clientes = () => {
                     required
                   />
                 </Grid>
-                <Grid item={true} xs={12} md={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
                     margin="dense"
                     name="telefono"
@@ -534,7 +534,7 @@ const Clientes = () => {
                     helperText="Incluye el código de país (ej: +51987654321)"
                   />
                 </Grid>
-                <Grid item={true} xs={12}>
+                <Grid size={{ xs: 12 }}>
                   <TextField
                     margin="dense"
                     name="email"
@@ -546,7 +546,7 @@ const Clientes = () => {
                     onChange={handleInputChange}
                   />
                 </Grid>
-                <Grid item={true} xs={12}>
+                <Grid size={{ xs: 12 }}>
                   <TextField
                     margin="dense"
                     name="notas"
@@ -564,7 +564,7 @@ const Clientes = () => {
 
             {tabValue === 1 && (
               <Grid container spacing={2}>
-                <Grid item={true} xs={12} md={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
                     margin="dense"
                     name="ruc"
@@ -576,7 +576,7 @@ const Clientes = () => {
                     onChange={handleInputChange}
                   />
                 </Grid>
-                <Grid item={true} xs={12} md={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
                     margin="dense"
                     name="razon_social"
@@ -588,7 +588,7 @@ const Clientes = () => {
                     onChange={handleInputChange}
                   />
                 </Grid>
-                <Grid item={true} xs={12}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
                     margin="dense"
                     name="representante"
@@ -605,7 +605,7 @@ const Clientes = () => {
 
             {tabValue === 2 && (
               <Grid container spacing={2}>
-                <Grid item={true} xs={12} md={4}>
+                <Grid size={{ xs: 12, sm: 4 }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Próxima Llamada
                   </Typography>
@@ -616,7 +616,7 @@ const Clientes = () => {
                     sx={{ width: '100%' }}
                   />
                 </Grid>
-                <Grid item={true} xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Próxima Visita
                   </Typography>
@@ -627,7 +627,7 @@ const Clientes = () => {
                     sx={{ width: '100%' }}
                   />
                 </Grid>
-                <Grid item={true} xs={12} md={4}>
+                <Grid size={{ xs: 12, sm: 4 }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Próxima Reunión
                   </Typography>
