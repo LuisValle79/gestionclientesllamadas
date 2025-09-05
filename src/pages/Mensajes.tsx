@@ -1,23 +1,23 @@
 import { useState, useEffect } from 'react';
 import {
   Container, Typography, Paper, Box, Button, TextField, Dialog, DialogActions,
-  DialogContent, DialogTitle, CircularProgress, Snackbar, Alert, List, ListItem,
+  DialogContent, DialogTitle, Snackbar, Alert, List, ListItem,
   ListItemText, ListItemAvatar, Avatar, Divider, FormControl, InputLabel, Select,
   MenuItem, IconButton, Skeleton, InputAdornment, Fade,
 } from '@mui/material';
-import { Send as SendIcon, Add as AddIcon, Delete as DeleteIcon, PersonAdd as PersonAddIcon } from '@mui/icons-material';
+import { Send as SendIcon, PersonAdd as PersonAddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import type { SelectChangeEvent } from '@mui/material';
 import { supabase } from '../services/supabase';
 
 type Cliente = {
-  id: string; // Changed to string for UUID
+  id: string;
   nombre: string;
   telefono: string;
 };
 
 type Mensaje = {
-  id: string; // Changed to string for UUID
-  cliente_id: string; // Changed to string for UUID
+  id: string;
+  cliente_id: string;
   contenido: string;
   tipo: 'enviado' | 'recibido';
   created_at: string;
@@ -27,13 +27,13 @@ type Mensaje = {
 const Mensajes = () => {
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [selectedCliente, setSelectedCliente] = useState<string>(''); // Changed to string
+  const [selectedCliente, setSelectedCliente] = useState<string>('');
   const [nuevoMensaje, setNuevoMensaje] = useState('');
   const [nuevoClienteNombre, setNuevoClienteNombre] = useState('');
   const [nuevoClienteTelefono, setNuevoClienteTelefono] = useState('');
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
-  const [openDeleteDialog, setOpenDeleteDialog] = useState<string | null>(null); // For delete confirmation
+  const [openDeleteDialog, setOpenDeleteDialog] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
   useEffect(() => {
@@ -41,12 +41,20 @@ const Mensajes = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedCliente) {
-      fetchMensajes(selectedCliente); // No Number() conversion needed
+    if (selectedCliente && isValidUUID(selectedCliente)) {
+      console.log('Fetching mensajes for cliente_id:', selectedCliente);
+      fetchMensajes(selectedCliente);
     } else {
       setMensajes([]);
+      setLoading(false);
     }
   }, [selectedCliente]);
+
+  // Validar si un string es un UUID válido
+  const isValidUUID = (str: string): boolean => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
+  };
 
   // Fetch clients from Supabase
   const fetchClientes = async () => {
@@ -79,7 +87,7 @@ const Mensajes = () => {
           contenido,
           tipo,
           created_at,
-          clientes (id, nombre, telefono)
+          clientes!mensajes_cliente_id_fkey (id, nombre, telefono)
         `)
         .eq('cliente_id', clienteId)
         .order('created_at');
@@ -92,7 +100,7 @@ const Mensajes = () => {
           contenido: item.contenido,
           tipo: item.tipo,
           created_at: item.created_at,
-          cliente: item.clientes,
+          cliente: item.clientes, // Ahora clientes es un objeto, no un array
         })) || []
       );
     } catch (error: any) {
@@ -105,7 +113,9 @@ const Mensajes = () => {
 
   // Handle client selection
   const handleClienteChange = (event: SelectChangeEvent<string>) => {
-    setSelectedCliente(event.target.value);
+    const value = event.target.value;
+    console.log('Selected cliente:', value);
+    setSelectedCliente(value);
   };
 
   // Open/close dialogs
@@ -140,8 +150,8 @@ const Mensajes = () => {
 
   // Send message via WhatsApp
   const handleEnviarMensaje = async () => {
-    if (!selectedCliente || !nuevoMensaje.trim()) {
-      setSnackbar({ open: true, message: 'Selecciona un cliente y escribe un mensaje', severity: 'error' });
+    if (!selectedCliente || !isValidUUID(selectedCliente) || !nuevoMensaje.trim()) {
+      setSnackbar({ open: true, message: 'Selecciona un cliente válido y escribe un mensaje', severity: 'error' });
       return;
     }
 
@@ -175,8 +185,8 @@ const Mensajes = () => {
 
   // Register received message
   const handleRegistrarMensajeRecibido = async () => {
-    if (!selectedCliente || !nuevoMensaje.trim()) {
-      setSnackbar({ open: true, message: 'Selecciona un cliente y escribe el mensaje recibido', severity: 'error' });
+    if (!selectedCliente || !isValidUUID(selectedCliente) || !nuevoMensaje.trim()) {
+      setSnackbar({ open: true, message: 'Selecciona un cliente válido y escribe el mensaje recibido', severity: 'error' });
       return;
     }
 
@@ -283,7 +293,7 @@ const Mensajes = () => {
         </FormControl>
       </Box>
 
-      {selectedCliente ? (
+      {selectedCliente && isValidUUID(selectedCliente) ? (
         <>
           {/* Message List */}
           <Paper
@@ -398,7 +408,7 @@ const Mensajes = () => {
                   color="primary"
                   endIcon={<SendIcon />}
                   onClick={handleEnviarMensaje}
-                  disabled={!nuevoMensaje.trim()}
+                  disabled={!nuevoMensaje.trim() || !isValidUUID(selectedCliente)}
                   aria-label="Enviar mensaje"
                   sx={{
                     borderRadius: 1,
@@ -414,7 +424,7 @@ const Mensajes = () => {
                   variant="outlined"
                   color="secondary"
                   onClick={handleRegistrarMensajeRecibido}
-                  disabled={!nuevoMensaje.trim()}
+                  disabled={!nuevoMensaje.trim() || !isValidUUID(selectedCliente)}
                   aria-label="Registrar mensaje recibido"
                   sx={{ borderRadius: 1, textTransform: 'none', fontWeight: 600 }}
                 >
