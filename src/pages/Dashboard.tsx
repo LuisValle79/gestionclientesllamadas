@@ -22,41 +22,41 @@ const Dashboard = () => {
   const { alert, showError, hideAlert } = useAlert();
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const { count: clientesCount, error: clientesError } = await supabase
-          .from('clientes')
-          .select('*', { count: 'exact', head: true });
+const fetchStats = async () => {
+  try {
+    const { count: clientesCount, error: clientesError } = await supabase
+      .from('clientes')
+      .select('*', { count: 'exact', head: true });
 
-        const fechaLimite = new Date();
-        fechaLimite.setDate(fechaLimite.getDate() - 7);
+    const fechaLimite = new Date();
+    fechaLimite.setDate(fechaLimite.getDate() - 7);
 
-        const { count: mensajesCount, error: mensajesError } = await supabase
-          .from('mensajes')
-          .select('*', { count: 'exact', head: true })
-          .gte('fecha_envio', fechaLimite.toISOString());
+    const { count: mensajesCount, error: mensajesError } = await supabase
+      .from('mensajes')
+      .select('id, cliente_id, contenido, enviado_por, created_at', { count: 'exact', head: true })
+      .gte('created_at', fechaLimite.toISOString());
 
-        const { count: recordatoriosCount, error: recordatoriosError } = await supabase
-          .from('recordatorios')
-          .select('*', { count: 'exact', head: true })
-          .eq('completado', false);
+const { count: recordatoriosCount, error: recordatoriosError } = await supabase
+  .from('recordatorios')
+  .select('id, cliente_id, tipo, fecha, descripcion, completado, created_at, updated_at', { count: 'exact', head: true })
+  .eq('completado', false);
 
-        if (clientesError || mensajesError || recordatoriosError) {
-          throw new Error('Error al obtener estadísticas');
-        }
+    if (clientesError) throw new Error(`Error en clientes: ${clientesError.message}`);
+    if (mensajesError) throw new Error(`Error en mensajes: ${mensajesError.message}`);
+    if (recordatoriosError) throw new Error(`Error en recordatorios: ${recordatoriosError.message}`);
 
-        setStats({
-          totalClientes: clientesCount || 0,
-          mensajesRecientes: mensajesCount || 0,
-          recordatoriosPendientes: recordatoriosCount || 0,
-        });
-      } catch (error: any) {
-        console.error('Error:', error);
-        showError(error.message || 'Error al cargar las estadísticas', 'Error en Dashboard');
-      } finally {
-        setLoading(false);
-      }
-    };
+    setStats({
+      totalClientes: clientesCount || 0,
+      mensajesRecientes: mensajesCount || 0,
+      recordatoriosPendientes: recordatoriosCount || 0,
+    });
+  } catch (error: any) {
+    console.error('Error al obtener estadísticas:', error);
+    showError(error.message || 'Error al cargar las estadísticas', 'Error en Dashboard');
+  } finally {
+    setLoading(false);
+  }
+};
 
     fetchStats();
   }, []);
@@ -74,6 +74,7 @@ const Dashboard = () => {
         title={alert.title}
         onClose={hideAlert}
       />
+
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
         <Typography variant="h4" gutterBottom component="h1">
           Dashboard
@@ -81,7 +82,7 @@ const Dashboard = () => {
 
         <Grid container spacing={3}>
           {/* Tarjeta de Clientes */}
-          <Grid item xs={12} sm={6} md={4}>
+          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
             <Card>
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -100,7 +101,7 @@ const Dashboard = () => {
           </Grid>
 
           {/* Tarjeta de Mensajes */}
-          <Grid item xs={12} sm={6} md={4}>
+          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
             <Card>
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -119,7 +120,7 @@ const Dashboard = () => {
           </Grid>
 
           {/* Tarjeta de Recordatorios */}
-          <Grid item xs={12} sm={6} md={4}>
+          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
             <Card>
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -137,8 +138,8 @@ const Dashboard = () => {
             </Card>
           </Grid>
 
-          {/* Resumen de actividad reciente */}
-          <Grid item xs={12}>
+          {/* Resumen de actividad */}
+          <Grid size={{xs:12}}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="h6" gutterBottom>
                 Actividad Reciente

@@ -3,7 +3,7 @@ import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Drawer from '@mui/material/Drawer';
 import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
+import ListItemButton from '@mui/material/ListItemButton'; // Cambia a ListItemButton
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Divider from '@mui/material/Divider';
@@ -88,7 +88,7 @@ const Navigation = ({ mobileOpen, handleDrawerToggle }: NavigationProps) => {
     <Box sx={{ width: 250, height: '100%', bgcolor: theme.palette.background.paper }}>
       <Box sx={{ 
         p: 2, 
-        pt: isMobile ? 2 : theme.mixins.toolbar.minHeight / 8, // Ajustar padding-top para AppBar
+        pt: isMobile ? 2 : theme.mixins.toolbar.minHeight / 8,
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'space-between',
@@ -172,8 +172,7 @@ const Navigation = ({ mobileOpen, handleDrawerToggle }: NavigationProps) => {
       <Divider sx={{ my: 1 }} />
 
       <List sx={{ px: 1 }}>
-        <ListItem
-          button
+        <ListItemButton
           onClick={handleLogout}
           sx={{
             borderRadius: 1,
@@ -204,7 +203,7 @@ const Navigation = ({ mobileOpen, handleDrawerToggle }: NavigationProps) => {
                 : theme.palette.error.main,
             }}
           />
-        </ListItem>
+        </ListItemButton>
       </List>
     </Box>
   );

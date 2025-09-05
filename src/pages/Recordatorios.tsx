@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import {
   Container, Typography, Paper, Box, Button, TextField, Dialog, DialogActions,
   DialogContent, DialogTitle, CircularProgress, Snackbar, Alert, Checkbox,
-  FormControl, InputLabel, Select, MenuItem, Chip, Divider, useTheme, Grid2,
+  FormControl, InputLabel, Select, MenuItem, Chip, Divider, useTheme,
 } from '@mui/material';
+import { Grid } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon, Notifications as NotificationsIcon } from '@mui/icons-material';
 import { supabase } from '../services/supabase';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { es } from 'date-fns/locale';
 
@@ -87,17 +88,18 @@ const Recordatorios = () => {
 
       if (error) throw error;
       setRecordatorios(
-        data?.map((item) => ({
-          id: item.id,
-          cliente_id: item.cliente_id,
-          titulo: item.titulo,
-          descripcion: item.descripcion,
-          fecha: item.fecha,
-          completado: item.completado,
-          created_at: item.created_at,
-          cliente: item.clientes,
-        })) || []
-      );
+data?.map((item: Recordatorio) => ({
+  id: item.id,
+  cliente_id: item.cliente_id,
+  titulo: item.titulo,
+  descripcion: item.descripcion,
+  fecha: item.fecha,
+  completado: item.completado,
+  created_at: item.created_at,
+  cliente: item.cliente,
+})));
+
+      
     } catch (error: any) {
       console.error('Error al cargar recordatorios:', error.message);
       setSnackbar({ open: true, message: `Error al cargar recordatorios: ${error.message}`, severity: 'error' });
@@ -298,10 +300,10 @@ const Recordatorios = () => {
           <CircularProgress aria-label="Cargando recordatorios" />
         </Box>
       ) : (
-        <Grid2 container spacing={2}>
+        <Grid container spacing={2}>
           {recordatorios.length > 0 ? (
             recordatorios.map((recordatorio) => (
-              <Grid2 size={{ xs: 12, sm: 6, md: 4 }} key={recordatorio.id}>
+              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={recordatorio.id}>
                 <Paper
                   sx={{
                     position: 'relative',
@@ -383,18 +385,18 @@ const Recordatorios = () => {
                     </Button>
                   </Box>
                 </Paper>
-              </Grid2>
+              </Grid>
             ))
           ) : (
-            <Grid2 size={{ xs: 12 }}>
+            <Grid size={{ xs: 12 }}>
               <Paper sx={{ p: 4, textAlign: 'center', borderRadius: theme.shape.borderRadius, boxShadow: theme.shadows[2] }}>
                 <Typography variant="h6" color="text.secondary">
                   No hay recordatorios {filtroCompletado !== 'todos' ? (filtroCompletado === 'pendientes' ? 'pendientes' : 'completados') : ''}
                 </Typography>
               </Paper>
-            </Grid2>
+            </Grid>
           )}
-        </Grid2>
+        </Grid>
       )}
 
       {/* Diálogo para agregar/editar recordatorio */}

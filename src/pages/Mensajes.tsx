@@ -62,40 +62,40 @@ const Mensajes = () => {
     }
   };
 
-  const fetchMensajes = async (clienteId: number) => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('mensajes')
-        .select(`
-          id,
-          cliente_id,
-          contenido,
-          tipo,
-          created_at,
-          clientes (id, nombre, telefono)
-        `)
-        .eq('cliente_id', clienteId)
-        .order('created_at');
+const fetchMensajes = async (clienteId: number) => {
+  try {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('mensajes')
+      .select(`
+        id,
+        cliente_id,
+        contenido,
+        tipo,
+        created_at,
+        clientes (id, nombre, telefono)
+      `)
+      .eq('cliente_id', clienteId)
+      .order('created_at');
 
-      if (error) throw error;
-      setMensajes(
-        data?.map((item) => ({
-          id: item.id,
-          cliente_id: item.cliente_id,
-          contenido: item.contenido,
-          tipo: item.tipo,
-          created_at: item.created_at,
-          cliente: item.clientes, // Ajustado para que cliente sea un objeto
-        })) || []
-      );
-    } catch (error: any) {
-      console.error('Error al cargar mensajes:', error.message);
-      setSnackbar({ open: true, message: `Error al cargar mensajes: ${error.message}`, severity: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (error) throw error;
+    setMensajes(
+      data?.map((item) => ({
+        id: item.id,
+        cliente_id: item.cliente_id,
+        contenido: item.contenido,
+        tipo: item.tipo,
+        created_at: item.created_at,
+        cliente: item.clientes && item.clientes.length > 0 ? item.clientes[0] : undefined, // Toma el primer cliente del arreglo
+      })) || []
+    );
+  } catch (error: any) {
+    console.error('Error al cargar mensajes:', error.message);
+    setSnackbar({ open: true, message: `Error al cargar mensajes: ${error.message}`, severity: 'error' });
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleClienteChange = (event: SelectChangeEvent<number | string>) => {
     setSelectedCliente(event.target.value as number | '');

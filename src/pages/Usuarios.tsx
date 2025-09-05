@@ -63,20 +63,29 @@ const Usuarios = () => {
     }
   };
 
-  const fetchUsuarios = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase.rpc('get_usuarios_con_perfiles');
-
-      if (error) throw error;
-      setUsuarios(data || []);
-    } catch (error: any) {
-      console.error('Error al cargar usuarios:', error.message);
-      setSnackbar({ open: true, message: `Error al cargar usuarios: ${error.message}`, severity: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  };
+const fetchUsuarios = async () => {
+  try {
+    setLoading(true);
+    const { data, error } = await supabase.rpc('get_usuarios_con_perfiles');
+    if (error) throw error;
+    setUsuarios(
+      data?.map((item: any) => ({
+        id: item.id,
+        email: item.email,
+        nombre: item.nombre || null,
+        apellido: item.apellido || null,
+        rol: item.rol as 'administrador' | 'asesor' | 'cliente',
+        telefono: item.telefono || null,
+        created_at: item.created_at,
+      })) || []
+    );
+  } catch (error: any) {
+    console.error('Error al cargar usuarios:', error);
+    setSnackbar({ open: true, message: `Error al cargar usuarios: ${error.message}`, severity: 'error' });
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleOpenDialog = (usuario?: Usuario) => {
     if (usuario) {

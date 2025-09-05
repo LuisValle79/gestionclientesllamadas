@@ -1,5 +1,5 @@
 import React from 'react';
-import ListItem from '@mui/material/ListItem';
+import ListItemButton from '@mui/material/ListItemButton'; // Cambia a ListItemButton
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import { useTheme } from '@mui/material/styles';
@@ -15,8 +15,7 @@ const NavigationItem: React.FC<NavigationItemProps> = ({ text, icon, isActive, o
   const theme = useTheme();
 
   return (
-    <ListItem
-      component="button"
+    <ListItemButton
       onClick={onClick}
       sx={{
         mb: 0.5,
@@ -48,7 +47,7 @@ const NavigationItem: React.FC<NavigationItemProps> = ({ text, icon, isActive, o
           fontSize: '0.95rem',
         }}
       />
-    </ListItem>
+    </ListItemButton>
   );
 };
 
