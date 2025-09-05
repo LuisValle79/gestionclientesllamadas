@@ -93,16 +93,16 @@ const Mensajes = () => {
         .order('created_at');
 
       if (error) throw error;
-      setMensajes(
-        data?.map((item) => ({
-          id: item.id,
-          cliente_id: item.cliente_id,
-          contenido: item.contenido,
-          tipo: item.tipo,
-          created_at: item.created_at,
-          cliente: item.clientes, // Ahora clientes es un objeto, no un array
-        })) || []
-      );
+    setMensajes(
+      data?.map((item) => ({
+        id: item.id,
+        cliente_id: item.cliente_id,
+        contenido: item.contenido,
+        tipo: item.tipo,
+        created_at: item.created_at,
+        cliente: item.clientes && item.clientes.length > 0 ? item.clientes[0] : undefined, // Toma el primer cliente del arreglo
+      })) || []
+    );
     } catch (error: any) {
       console.error('Error al cargar mensajes:', error.message);
       setSnackbar({ open: true, message: `Error al cargar mensajes: ${error.message}`, severity: 'error' });
