@@ -1,119 +1,116 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react';
 import {
-  Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
+  Box, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, TextField, Dialog, DialogActions, DialogContent,
-  DialogTitle, Box, IconButton, CircularProgress, Snackbar, Alert, TablePagination,
+  DialogTitle, IconButton, CircularProgress, Snackbar, Alert, TablePagination,
   Tabs, Tab, Chip, Tooltip, FormControl, InputLabel, Select, MenuItem, useTheme,
-  createTheme, ThemeProvider,
-
-} from '@mui/material'
-import { Grid } from '@mui/material';
-import type { SelectChangeEvent } from '@mui/material'
-import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
-import { es } from 'date-fns/locale'
-import { 
-  Add as AddIcon, 
-  Edit as EditIcon, 
-  Delete as DeleteIcon, 
+} from '@mui/material';
+import Grid from '@mui/material/Grid';
+import type { SelectChangeEvent } from '@mui/material';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { es } from 'date-fns/locale';
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
   WhatsApp as WhatsAppIcon,
   Business as BusinessIcon,
-  Person as PersonIcon,
   Phone as PhoneIcon,
   Event as EventIcon,
-  CalendarMonth as CalendarIcon
-} from '@mui/icons-material'
-import { supabase } from '../services/supabase'
+  CalendarMonth as CalendarIcon,
+} from '@mui/icons-material';
+import { supabase } from '../services/supabase';
 
 type Cliente = {
-  id: string
-  nombre: string
-  telefono: string
-  email: string
-  ruc: string
-  razon_social: string
-  representante: string
-  notas: string
-  fecha_proxima_llamada: string | null
-  fecha_proxima_visita: string | null
-  fecha_proxima_reunion: string | null
-  created_at: string
-}
+  id: string;
+  nombre: string;
+  telefono: string;
+  email: string;
+  ruc: string;
+  razon_social: string;
+  representante: string;
+  notas: string;
+  fecha_proxima_llamada: string | null;
+  fecha_proxima_visita: string | null;
+  fecha_proxima_reunion: string | null;
+  created_at: string;
+};
 
 const Clientes = () => {
   const theme = useTheme();
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [loading, setLoading] = useState(true)
-  const [openDialog, setOpenDialog] = useState(false)
-  const [currentCliente, setCurrentCliente] = useState<Partial<Cliente>>({})
-  const [isEditing, setIsEditing] = useState(false)
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' })
-  const [page, setPage] = useState(0)
-  const [rowsPerPage, setRowsPerPage] = useState(10)
-  const [tabValue, setTabValue] = useState(0)
-  const [filtro, setFiltro] = useState('todos')
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [currentCliente, setCurrentCliente] = useState<Partial<Cliente>>({});
+  const [isEditing, setIsEditing] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [tabValue, setTabValue] = useState(0);
+  const [filtro, setFiltro] = useState('todos');
 
   useEffect(() => {
-    fetchClientes()
-  }, [filtro])
+    fetchClientes();
+  }, [filtro]);
 
   const fetchClientes = async () => {
     try {
-      setLoading(true)
+      setLoading(true);
       let query = supabase
         .from('clientes')
-        .select('*')
+        .select('*');
 
       // Aplicar filtros si es necesario
       if (filtro === 'proxima_llamada') {
-        query = query.not('fecha_proxima_llamada', 'is', null)
+        query = query.not('fecha_proxima_llamada', 'is', null);
       } else if (filtro === 'proxima_visita') {
-        query = query.not('fecha_proxima_visita', 'is', null)
+        query = query.not('fecha_proxima_visita', 'is', null);
       } else if (filtro === 'proxima_reunion') {
-        query = query.not('fecha_proxima_reunion', 'is', null)
+        query = query.not('fecha_proxima_reunion', 'is', null);
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false })
+      const { data, error } = await query.order('created_at', { ascending: false });
 
-      if (error) throw error
-      setClientes(data || [])
+      if (error) throw error;
+      setClientes(data || []);
     } catch (error: any) {
-      console.error('Error al cargar clientes:', error.message)
-      setSnackbar({ open: true, message: `Error al cargar clientes: ${error.message}`, severity: 'error' })
+      console.error('Error al cargar clientes:', error.message);
+      setSnackbar({ open: true, message: `Error al cargar clientes: ${error.message}`, severity: 'error' });
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleOpenDialog = (cliente?: Cliente) => {
     if (cliente) {
-      setCurrentCliente(cliente)
-      setIsEditing(true)
+      setCurrentCliente(cliente);
+      setIsEditing(true);
     } else {
-      setCurrentCliente({})
-      setIsEditing(false)
+      setCurrentCliente({});
+      setIsEditing(false);
     }
-    setOpenDialog(true)
-  }
+    setOpenDialog(true);
+  };
 
   const handleCloseDialog = () => {
-    setOpenDialog(false)
-    setCurrentCliente({})
-  }
+    setOpenDialog(false);
+    setCurrentCliente({});
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setCurrentCliente({ ...currentCliente, [name]: value })
-  }
+    const { name, value } = e.target;
+    setCurrentCliente({ ...currentCliente, [name]: value });
+  };
 
   const handleDateChange = (field: string, newDate: Date | null) => {
     if (newDate) {
-      setCurrentCliente({ ...currentCliente, [field]: newDate.toISOString() })
+      setCurrentCliente({ ...currentCliente, [field]: newDate.toISOString() });
     } else {
-      setCurrentCliente({ ...currentCliente, [field]: null })
+      setCurrentCliente({ ...currentCliente, [field]: null });
     }
-  }
+  };
 
   const handleFiltroChange = (event: SelectChangeEvent<string>) => {
     setFiltro(event.target.value as string);
@@ -122,8 +119,8 @@ const Clientes = () => {
   const handleSaveCliente = async () => {
     try {
       if (!currentCliente.nombre || !currentCliente.telefono) {
-        setSnackbar({ open: true, message: 'Nombre y teléfono son obligatorios', severity: 'error' })
-        return
+        setSnackbar({ open: true, message: 'Nombre y teléfono son obligatorios', severity: 'error' });
+        return;
       }
 
       const clienteData = {
@@ -137,33 +134,33 @@ const Clientes = () => {
         notas: currentCliente.notas || null,
         fecha_proxima_llamada: currentCliente.fecha_proxima_llamada || null,
         fecha_proxima_visita: currentCliente.fecha_proxima_visita || null,
-        fecha_proxima_reunion: currentCliente.fecha_proxima_reunion || null
-      }
+        fecha_proxima_reunion: currentCliente.fecha_proxima_reunion || null,
+      };
 
       if (isEditing && currentCliente.id) {
         const { error } = await supabase
           .from('clientes')
           .update(clienteData)
-          .eq('id', currentCliente.id)
+          .eq('id', currentCliente.id);
 
-        if (error) throw error
-        setSnackbar({ open: true, message: 'Cliente actualizado correctamente', severity: 'success' })
+        if (error) throw error;
+        setSnackbar({ open: true, message: 'Cliente actualizado correctamente', severity: 'success' });
       } else {
         const { error } = await supabase
           .from('clientes')
-          .insert([clienteData])
+          .insert([clienteData]);
 
-        if (error) throw error
-        setSnackbar({ open: true, message: 'Cliente agregado correctamente', severity: 'success' })
+        if (error) throw error;
+        setSnackbar({ open: true, message: 'Cliente agregado correctamente', severity: 'success' });
       }
 
-      handleCloseDialog()
-      fetchClientes()
+      handleCloseDialog();
+      fetchClientes();
     } catch (error: any) {
-      console.error('Error al guardar cliente:', error.message)
-      setSnackbar({ open: true, message: `Error al guardar cliente: ${error.message}`, severity: 'error' })
+      console.error('Error al guardar cliente:', error.message);
+      setSnackbar({ open: true, message: `Error al guardar cliente: ${error.message}`, severity: 'error' });
     }
-  }
+  };
 
   const handleDeleteCliente = async (id: string) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este cliente?')) {
@@ -171,75 +168,69 @@ const Clientes = () => {
         const { error } = await supabase
           .from('clientes')
           .delete()
-          .eq('id', id)
+          .eq('id', id);
 
-        if (error) throw error
-        setSnackbar({ open: true, message: 'Cliente eliminado correctamente', severity: 'success' })
-        fetchClientes()
+        if (error) throw error;
+        setSnackbar({ open: true, message: 'Cliente eliminado correctamente', severity: 'success' });
+        fetchClientes();
       } catch (error: any) {
-        console.error('Error al eliminar cliente:', error.message)
-        setSnackbar({ open: true, message: `Error al eliminar cliente: ${error.message}`, severity: 'error' })
+        console.error('Error al eliminar cliente:', error.message);
+        setSnackbar({ open: true, message: `Error al eliminar cliente: ${error.message}`, severity: 'error' });
       }
     }
-  }
+  };
 
   const handleWhatsAppClick = (telefono: string) => {
-    // Eliminar cualquier carácter no numérico del número de teléfono
-    const numeroLimpio = telefono.replace(/\D/g, '')
-    // Crear el enlace de WhatsApp
-    const whatsappUrl = `https://wa.me/${numeroLimpio}`
-    // Abrir en una nueva pestaña
-    window.open(whatsappUrl, '_blank')
-  }
-  
+    const numeroLimpio = telefono.replace(/\D/g, '');
+    const whatsappUrl = `https://wa.me/${numeroLimpio}`;
+    window.open(whatsappUrl, '_blank');
+  };
+
   const handlePhoneCall = (telefono: string) => {
-    // Eliminar cualquier carácter no numérico del número de teléfono
-    const numeroLimpio = telefono.replace(/\D/g, '')
-    // Crear el enlace para llamada telefónica
-    const telUrl = `tel:${numeroLimpio}`
-    // Iniciar la llamada
-    window.location.href = telUrl
-  }
+    const numeroLimpio = telefono.replace(/\D/g, '');
+    const telUrl = `tel:${numeroLimpio}`;
+    window.location.href = telUrl;
+  };
 
   const handleChangePage = (_event: unknown, newPage: number) => {
-    setPage(newPage)
-  }
+    setPage(newPage);
+  };
 
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10))
-    setPage(0)
-  }
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue)
-  }
+    setTabValue(newValue);
+  };
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return '-'
-    const date = new Date(dateString)
+    if (!dateString) return '-';
+    const date = new Date(dateString);
     return new Intl.DateTimeFormat('es-ES', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
-    }).format(date)
-  }
+      minute: '2-digit',
+    }).format(date);
+  };
 
   const isDatePast = (dateString: string | null) => {
-    if (!dateString) return false
-    const date = new Date(dateString)
-    return date < new Date()
-  }
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    return date < new Date();
+  };
 
   const isDateSoon = (dateString: string | null) => {
-    if (!dateString) return false
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffTime = date.getTime() - now.getTime()
-    const diffDays = diffTime / (1000 * 3600 * 24)
-    return diffDays > 0 && diffDays <= 3
-  }
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = date.getTime() - now.getTime();
+    const diffDays = diffTime / (1000 * 3600 * 24);
+    return diffDays > 0 && diffDays <= 3;
+  };
 
   const renderClienteInfo = (cliente: Cliente) => {
     switch (tabValue) {
@@ -250,28 +241,28 @@ const Clientes = () => {
             <TableCell>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Tooltip title="Llamar">
-                  <IconButton 
-                    size="small" 
-                    color="primary" 
+                  <IconButton
+                    size="small"
+                    color="primary"
                     onClick={() => handlePhoneCall(cliente.telefono)}
                   >
                     <PhoneIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
-                <Box 
-                  component="span" 
+                <Box
+                  component="span"
                   onClick={() => handlePhoneCall(cliente.telefono)}
-                  sx={{ 
-                    cursor: 'pointer', 
-                    '&:hover': { textDecoration: 'underline', color: theme.palette.primary.main } 
+                  sx={{
+                    cursor: 'pointer',
+                    '&:hover': { textDecoration: 'underline', color: theme.palette.primary.main },
                   }}
                 >
                   {cliente.telefono}
                 </Box>
                 <Tooltip title="Enviar WhatsApp">
-                  <IconButton 
-                    size="small" 
-                    color="success" 
+                  <IconButton
+                    size="small"
+                    color="success"
                     onClick={() => handleWhatsAppClick(cliente.telefono)}
                   >
                     <WhatsAppIcon fontSize="small" />
@@ -283,11 +274,11 @@ const Clientes = () => {
             <TableCell>
               {cliente.ruc && (
                 <Tooltip title="RUC">
-                  <Chip 
-                    icon={<BusinessIcon />} 
-                    label={cliente.ruc} 
-                    size="small" 
-                    sx={{ mr: 1, mb: 1 }} 
+                  <Chip
+                    icon={<BusinessIcon />}
+                    label={cliente.ruc}
+                    size="small"
+                    sx={{ mr: 1, mb: 1 }}
                   />
                 </Tooltip>
               )}
@@ -316,7 +307,7 @@ const Clientes = () => {
               </IconButton>
             </TableCell>
           </TableRow>
-        )
+        );
       case 1: // Información empresarial
         return (
           <TableRow key={cliente.id}>
@@ -334,38 +325,38 @@ const Clientes = () => {
               </IconButton>
             </TableCell>
           </TableRow>
-        )
+        );
       case 2: // Programación
         return (
           <TableRow key={cliente.id}>
             <TableCell>{cliente.nombre}</TableCell>
             <TableCell>
               {cliente.fecha_proxima_llamada ? (
-                <Chip 
-                  icon={<PhoneIcon />} 
+                <Chip
+                  icon={<PhoneIcon />}
                   label={formatDate(cliente.fecha_proxima_llamada)}
                   color={isDatePast(cliente.fecha_proxima_llamada) ? 'error' : isDateSoon(cliente.fecha_proxima_llamada) ? 'warning' : 'default'}
-                  sx={{ mb: 1 }} 
+                  sx={{ mb: 1 }}
                 />
               ) : '-'}
             </TableCell>
             <TableCell>
               {cliente.fecha_proxima_visita ? (
-                <Chip 
-                  icon={<EventIcon />} 
+                <Chip
+                  icon={<EventIcon />}
                   label={formatDate(cliente.fecha_proxima_visita)}
                   color={isDatePast(cliente.fecha_proxima_visita) ? 'error' : isDateSoon(cliente.fecha_proxima_visita) ? 'warning' : 'default'}
-                  sx={{ mb: 1 }} 
+                  sx={{ mb: 1 }}
                 />
               ) : '-'}
             </TableCell>
             <TableCell>
               {cliente.fecha_proxima_reunion ? (
-                <Chip 
-                  icon={<CalendarIcon />} 
+                <Chip
+                  icon={<CalendarIcon />}
                   label={formatDate(cliente.fecha_proxima_reunion)}
                   color={isDatePast(cliente.fecha_proxima_reunion) ? 'error' : isDateSoon(cliente.fecha_proxima_reunion) ? 'warning' : 'default'}
-                  sx={{ mb: 1 }} 
+                  sx={{ mb: 1 }}
                 />
               ) : '-'}
             </TableCell>
@@ -379,11 +370,11 @@ const Clientes = () => {
               </IconButton>
             </TableCell>
           </TableRow>
-        )
+        );
       default:
-        return null
+        return null;
     }
-  }
+  };
 
   const getTableHeaders = () => {
     switch (tabValue) {
@@ -396,7 +387,7 @@ const Clientes = () => {
             <TableCell>RUC</TableCell>
             <TableCell align="center">Acciones</TableCell>
           </TableRow>
-        )
+        );
       case 1: // Información empresarial
         return (
           <TableRow>
@@ -406,7 +397,7 @@ const Clientes = () => {
             <TableCell>RUC</TableCell>
             <TableCell align="center">Acciones</TableCell>
           </TableRow>
-        )
+        );
       case 2: // Programación
         return (
           <TableRow>
@@ -416,14 +407,14 @@ const Clientes = () => {
             <TableCell>Próxima Reunión</TableCell>
             <TableCell align="center">Acciones</TableCell>
           </TableRow>
-        )
+        );
       default:
-        return null
+        return null;
     }
-  }
+  };
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+    <Box sx={{ width: '100%', maxWidth: '100%', mt: 4, mb: 4, p: 2 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1">
           Gestión de Clientes
@@ -515,7 +506,7 @@ const Clientes = () => {
 
             {tabValue === 0 && (
               <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
+                <Grid item={true} xs={12} md={6}>
                   <TextField
                     autoFocus
                     margin="dense"
@@ -529,7 +520,7 @@ const Clientes = () => {
                     required
                   />
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid item={true} xs={12} md={6}>
                   <TextField
                     margin="dense"
                     name="telefono"
@@ -543,7 +534,7 @@ const Clientes = () => {
                     helperText="Incluye el código de país (ej: +51987654321)"
                   />
                 </Grid>
-                <Grid item xs={12}>
+                <Grid item={true} xs={12}>
                   <TextField
                     margin="dense"
                     name="email"
@@ -555,7 +546,7 @@ const Clientes = () => {
                     onChange={handleInputChange}
                   />
                 </Grid>
-                <Grid item xs={12}>
+                <Grid item={true} xs={12}>
                   <TextField
                     margin="dense"
                     name="notas"
@@ -573,7 +564,7 @@ const Clientes = () => {
 
             {tabValue === 1 && (
               <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
+                <Grid item={true} xs={12} md={6}>
                   <TextField
                     margin="dense"
                     name="ruc"
@@ -585,7 +576,7 @@ const Clientes = () => {
                     onChange={handleInputChange}
                   />
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid item={true} xs={12} md={6}>
                   <TextField
                     margin="dense"
                     name="razon_social"
@@ -597,7 +588,7 @@ const Clientes = () => {
                     onChange={handleInputChange}
                   />
                 </Grid>
-                <Grid item xs={12}>
+                <Grid item={true} xs={12}>
                   <TextField
                     margin="dense"
                     name="representante"
@@ -614,7 +605,7 @@ const Clientes = () => {
 
             {tabValue === 2 && (
               <Grid container spacing={2}>
-                <Grid item xs={12} md={4}>
+                <Grid item={true} xs={12} md={4}>
                   <Typography variant="subtitle2" gutterBottom>
                     Próxima Llamada
                   </Typography>
@@ -625,7 +616,7 @@ const Clientes = () => {
                     sx={{ width: '100%' }}
                   />
                 </Grid>
-                <Grid item xs={12} md={4}>
+                <Grid item={true} xs={12} md={4}>
                   <Typography variant="subtitle2" gutterBottom>
                     Próxima Visita
                   </Typography>
@@ -636,7 +627,7 @@ const Clientes = () => {
                     sx={{ width: '100%' }}
                   />
                 </Grid>
-                <Grid item xs={12} md={4}>
+                <Grid item={true} xs={12} md={4}>
                   <Typography variant="subtitle2" gutterBottom>
                     Próxima Reunión
                   </Typography>
@@ -673,8 +664,8 @@ const Clientes = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Container>
-  )
-}
+    </Box>
+  );
+};
 
-export default Clientes
+export default Clientes;

@@ -88,7 +88,7 @@ const Navigation = ({ mobileOpen, handleDrawerToggle }: NavigationProps) => {
     <Box sx={{ width: 250, height: '100%', bgcolor: theme.palette.background.paper }}>
       <Box sx={{ 
         p: 2, 
-        pt: isMobile ? 2 : theme.mixins.toolbar.minHeight / 8,
+        
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'space-between',
