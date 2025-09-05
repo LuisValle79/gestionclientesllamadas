@@ -1,14 +1,11 @@
 import { useState, useEffect } from 'react';
 import {
   Container, Typography, Paper, Box, Button, TextField, Dialog, DialogActions,
-  DialogContent, DialogTitle, CircularProgress, Snackbar, Alert, List, ListItem,
-  ListItemText, IconButton, Checkbox, FormControl, InputLabel, Select, MenuItem,
-  Chip, Divider, useTheme
+  DialogContent, DialogTitle, CircularProgress, Snackbar, Alert, Checkbox,
+  FormControl, InputLabel, Select, MenuItem, Chip, Divider, useTheme, Grid2,
 } from '@mui/material';
-import Grid from '@mui/material/Grid'; // Usar Grid estándar
-
-import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon, Notifications as NotificationsIcon } from '@mui/icons-material';
 import type { SelectChangeEvent } from '@mui/material';
+import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon, Notifications as NotificationsIcon } from '@mui/icons-material';
 import { supabase } from '../services/supabase';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -26,7 +23,7 @@ type Recordatorio = {
   cliente_id: number;
   titulo: string;
   descripcion: string;
-  fecha: string; // Cambiado de fecha_hora a fecha
+  fecha: string;
   completado: boolean;
   created_at: string;
   cliente?: Cliente;
@@ -76,7 +73,7 @@ const Recordatorios = () => {
           fecha,
           completado,
           created_at,
-          cliente:clientes(id, nombre, telefono)
+          clientes (id, nombre, telefono)
         `)
         .order('fecha');
 
@@ -89,7 +86,18 @@ const Recordatorios = () => {
       const { data, error } = await query;
 
       if (error) throw error;
-      setRecordatorios(data || []);
+      setRecordatorios(
+        data?.map((item) => ({
+          id: item.id,
+          cliente_id: item.cliente_id,
+          titulo: item.titulo,
+          descripcion: item.descripcion,
+          fecha: item.fecha,
+          completado: item.completado,
+          created_at: item.created_at,
+          cliente: item.clientes,
+        })) || []
+      );
     } catch (error: any) {
       console.error('Error al cargar recordatorios:', error.message);
       setSnackbar({ open: true, message: `Error al cargar recordatorios: ${error.message}`, severity: 'error' });
@@ -105,7 +113,7 @@ const Recordatorios = () => {
     } else {
       setCurrentRecordatorio({
         fecha: new Date().toISOString(),
-        completado: false
+        completado: false,
       });
       setIsEditing(false);
     }
@@ -151,7 +159,7 @@ const Recordatorios = () => {
             titulo: currentRecordatorio.titulo,
             descripcion: currentRecordatorio.descripcion || '',
             fecha: currentRecordatorio.fecha,
-            completado: currentRecordatorio.completado
+            completado: currentRecordatorio.completado,
           })
           .eq('id', currentRecordatorio.id);
 
@@ -166,8 +174,8 @@ const Recordatorios = () => {
               titulo: currentRecordatorio.titulo,
               descripcion: currentRecordatorio.descripcion || '',
               fecha: currentRecordatorio.fecha,
-              completado: false
-            }
+              completado: false,
+            },
           ]);
 
         if (error) throw error;
@@ -193,7 +201,7 @@ const Recordatorios = () => {
       setSnackbar({
         open: true,
         message: `Recordatorio marcado como ${!completado ? 'completado' : 'pendiente'}`,
-        severity: 'success'
+        severity: 'success',
       });
       fetchRecordatorios();
     } catch (error: any) {
@@ -227,7 +235,7 @@ const Recordatorios = () => {
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     }).format(date);
   };
 
@@ -248,20 +256,8 @@ const Recordatorios = () => {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       {/* Encabezado */}
-      <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        mb: theme.spacing(3) 
-      }}>
-        <Typography 
-          variant="h4" 
-          component="h1"
-          sx={{ 
-            fontWeight: '600', 
-            color: theme.palette.text.primary 
-          }}
-        >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: theme.spacing(3) }}>
+        <Typography variant="h4" component="h1" sx={{ fontWeight: '600', color: theme.palette.text.primary }}>
           Recordatorios
         </Typography>
         <Button
@@ -269,12 +265,7 @@ const Recordatorios = () => {
           color="primary"
           startIcon={<AddIcon />}
           onClick={() => handleOpenDialog()}
-          sx={{ 
-            borderRadius: theme.shape.borderRadius,
-            px: 3,
-            py: 1,
-            fontSize: '0.9rem'
-          }}
+          sx={{ borderRadius: theme.shape.borderRadius, px: 3, py: 1, fontSize: '0.9rem' }}
           aria-label="Crear nuevo recordatorio"
         >
           Nuevo Recordatorio
@@ -283,15 +274,7 @@ const Recordatorios = () => {
 
       {/* Filtro */}
       <Box sx={{ mb: theme.spacing(3) }}>
-        <FormControl 
-          variant="outlined" 
-          sx={{ 
-            minWidth: 200,
-            '& .MuiOutlinedInput-root': {
-              borderRadius: theme.shape.borderRadius,
-            }
-          }}
-        >
+        <FormControl variant="outlined" sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: theme.shape.borderRadius } }}>
           <InputLabel id="filtro-select-label">Mostrar</InputLabel>
           <Select
             labelId="filtro-select-label"
@@ -315,11 +298,10 @@ const Recordatorios = () => {
           <CircularProgress aria-label="Cargando recordatorios" />
         </Box>
       ) : (
-        <Grid container spacing={2}>
+        <Grid2 container spacing={2}>
           {recordatorios.length > 0 ? (
             recordatorios.map((recordatorio) => (
-              <Grid item xs={12} sm={6} md={4} key={recordatorio.id}>
-
+              <Grid2 size={{ xs: 12, sm: 6, md: 4 }} key={recordatorio.id}>
                 <Paper
                   sx={{
                     position: 'relative',
@@ -341,10 +323,7 @@ const Recordatorios = () => {
                   }}
                 >
                   {isRecordatorioProximo(recordatorio.fecha) && !recordatorio.completado && (
-                    <NotificationsIcon
-                      color="warning"
-                      sx={{ position: 'absolute', top: 10, right: 10, fontSize: '1.2rem' }}
-                    />
+                    <NotificationsIcon color="warning" sx={{ position: 'absolute', top: 10, right: 10, fontSize: '1.2rem' }} />
                   )}
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
                     <Checkbox
@@ -369,29 +348,17 @@ const Recordatorios = () => {
                     </Typography>
                   </Box>
                   <Chip
-                    label={recordatorio.cliente?.nombre}
+                    label={recordatorio.cliente?.nombre || 'Sin cliente'}
                     size="small"
-                    sx={{ 
-                      mb: 1.5, 
-                      bgcolor: theme.palette.secondary.light, 
-                      color: theme.palette.secondary.contrastText,
-                      fontWeight: 'medium'
-                    }}
+                    sx={{ mb: 1.5, bgcolor: theme.palette.secondary.light, color: theme.palette.secondary.contrastText, fontWeight: 'medium' }}
                   />
-                  <Typography 
-                    variant="body2" 
-                    color="text.secondary" 
-                    sx={{ mb: 1.5 }}
-                  >
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
                     {formatDate(recordatorio.fecha)}
                   </Typography>
                   <Divider sx={{ mb: 1.5 }} />
-                  <Typography 
+                  <Typography
                     variant="body2"
-                    sx={{ 
-                      color: recordatorio.completado ? theme.palette.text.disabled : theme.palette.text.secondary,
-                      minHeight: '3rem'
-                    }}
+                    sx={{ color: recordatorio.completado ? theme.palette.text.disabled : theme.palette.text.secondary, minHeight: '3rem' }}
                   >
                     {recordatorio.descripcion || 'Sin descripción'}
                   </Typography>
@@ -416,43 +383,23 @@ const Recordatorios = () => {
                     </Button>
                   </Box>
                 </Paper>
-              </Grid>
+              </Grid2>
             ))
           ) : (
-            <Grid item xs={12}>
-
-              <Paper sx={{ 
-                p: 4, 
-                textAlign: 'center', 
-                borderRadius: theme.shape.borderRadius,
-                boxShadow: theme.shadows[2]
-              }}>
+            <Grid2 size={{ xs: 12 }}>
+              <Paper sx={{ p: 4, textAlign: 'center', borderRadius: theme.shape.borderRadius, boxShadow: theme.shadows[2] }}>
                 <Typography variant="h6" color="text.secondary">
-                  No hay recordatorios {filtroCompletado !== 'todos' ? 
-                    (filtroCompletado === 'pendientes' ? 'pendientes' : 'completados') : ''}
+                  No hay recordatorios {filtroCompletado !== 'todos' ? (filtroCompletado === 'pendientes' ? 'pendientes' : 'completados') : ''}
                 </Typography>
               </Paper>
-            </Grid>
+            </Grid2>
           )}
-        </Grid>
+        </Grid2>
       )}
 
       {/* Diálogo para agregar/editar recordatorio */}
-      <Dialog 
-        open={openDialog} 
-        onClose={handleCloseDialog} 
-        maxWidth="sm" 
-        fullWidth
-        sx={{ 
-          '& .MuiDialog-paper': {
-            borderRadius: theme.shape.borderRadius,
-            p: 2,
-          }
-        }}
-      >
-        <DialogTitle sx={{ fontWeight: '500' }}>
-          {isEditing ? 'Editar Recordatorio' : 'Nuevo Recordatorio'}
-        </DialogTitle>
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth sx={{ '& .MuiDialog-paper': { borderRadius: theme.shape.borderRadius, p: 2 } }}>
+        <DialogTitle sx={{ fontWeight: '500' }}>{isEditing ? 'Editar Recordatorio' : 'Nuevo Recordatorio'}</DialogTitle>
         <DialogContent>
           <FormControl fullWidth sx={{ mt: 1 }}>
             <InputLabel id="cliente-select-label">Cliente</InputLabel>
@@ -506,10 +453,10 @@ const Recordatorios = () => {
               onChange={handleDateChange}
               sx={{ mt: 2, width: '100%', bgcolor: theme.palette.background.paper }}
               slotProps={{
-                textField: { 
+                textField: {
                   required: true,
-                  'aria-label': 'Seleccionar fecha y hora'
-                }
+                  'aria-label': 'Seleccionar fecha y hora',
+                },
               }}
             />
           </LocalizationProvider>
@@ -526,21 +473,14 @@ const Recordatorios = () => {
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button 
-            onClick={handleCloseDialog} 
-            color="inherit"
-            sx={{ borderRadius: theme.shape.borderRadius }}
-          >
+          <Button onClick={handleCloseDialog} color="inherit" sx={{ borderRadius: theme.shape.borderRadius }}>
             Cancelar
           </Button>
-          <Button 
-            onClick={handleSaveRecordatorio} 
-            variant="contained" 
+          <Button
+            onClick={handleSaveRecordatorio}
+            variant="contained"
             color="primary"
-            sx={{ 
-              borderRadius: theme.shape.borderRadius,
-              px: 3
-            }}
+            sx={{ borderRadius: theme.shape.borderRadius, px: 3 }}
             aria-label="Guardar recordatorio"
           >
             Guardar

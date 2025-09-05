@@ -1,70 +1,70 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react';
 import {
   Container, Typography, Paper, Box, Button, TextField, Dialog, DialogActions,
   DialogContent, DialogTitle, CircularProgress, Snackbar, Alert, List, ListItem,
   ListItemText, ListItemAvatar, Avatar, Divider, FormControl, InputLabel, Select,
-  MenuItem, IconButton
-} from '@mui/material'
-import type { SelectChangeEvent } from '@mui/material'
-import { Send as SendIcon, Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material'
-import { supabase } from '../services/supabase'
+  MenuItem, IconButton,
+} from '@mui/material';
+import type { SelectChangeEvent } from '@mui/material';
+import { Send as SendIcon, Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import { supabase } from '../services/supabase';
 
 type Cliente = {
-  id: number
-  nombre: string
-  telefono: string
-}
+  id: number;
+  nombre: string;
+  telefono: string;
+};
 
 type Mensaje = {
-  id: number
-  cliente_id: number
-  contenido: string
-  tipo: 'enviado' | 'recibido'
-  created_at: string
-  cliente?: Cliente
-}
+  id: number;
+  cliente_id: number;
+  contenido: string;
+  tipo: 'enviado' | 'recibido';
+  created_at: string;
+  cliente?: Cliente;
+};
 
 const Mensajes = () => {
-  const [mensajes, setMensajes] = useState<Mensaje[]>([])
-  const [clientes, setClientes] = useState<Cliente[]>([])
-  const [selectedCliente, setSelectedCliente] = useState<number | ''>('')
-  const [nuevoMensaje, setNuevoMensaje] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [openDialog, setOpenDialog] = useState(false)
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' })
+  const [mensajes, setMensajes] = useState<Mensaje[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [selectedCliente, setSelectedCliente] = useState<number | ''>('');
+  const [nuevoMensaje, setNuevoMensaje] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
   useEffect(() => {
-    fetchClientes()
-  }, [])
+    fetchClientes();
+  }, []);
 
   useEffect(() => {
     if (selectedCliente) {
-      fetchMensajes(Number(selectedCliente))
+      fetchMensajes(Number(selectedCliente));
     } else {
-      setMensajes([])
+      setMensajes([]);
     }
-  }, [selectedCliente])
+  }, [selectedCliente]);
 
   const fetchClientes = async () => {
     try {
       const { data, error } = await supabase
         .from('clientes')
         .select('id, nombre, telefono')
-        .order('nombre')
+        .order('nombre');
 
-      if (error) throw error
-      setClientes(data || [])
-      setLoading(false)
+      if (error) throw error;
+      setClientes(data || []);
+      setLoading(false);
     } catch (error: any) {
-      console.error('Error al cargar clientes:', error.message)
-      setSnackbar({ open: true, message: `Error al cargar clientes: ${error.message}`, severity: 'error' })
-      setLoading(false)
+      console.error('Error al cargar clientes:', error.message);
+      setSnackbar({ open: true, message: `Error al cargar clientes: ${error.message}`, severity: 'error' });
+      setLoading(false);
     }
-  }
+  };
 
   const fetchMensajes = async (clienteId: number) => {
     try {
-      setLoading(true)
+      setLoading(true);
       const { data, error } = await supabase
         .from('mensajes')
         .select(`
@@ -73,76 +73,81 @@ const Mensajes = () => {
           contenido,
           tipo,
           created_at,
-          cliente:clientes(id, nombre, telefono)
+          clientes (id, nombre, telefono)
         `)
         .eq('cliente_id', clienteId)
-        .order('created_at')
+        .order('created_at');
 
-      if (error) throw error
-      setMensajes(data || [])
+      if (error) throw error;
+      setMensajes(
+        data?.map((item) => ({
+          id: item.id,
+          cliente_id: item.cliente_id,
+          contenido: item.contenido,
+          tipo: item.tipo,
+          created_at: item.created_at,
+          cliente: item.clientes, // Ajustado para que cliente sea un objeto
+        })) || []
+      );
     } catch (error: any) {
-      console.error('Error al cargar mensajes:', error.message)
-      setSnackbar({ open: true, message: `Error al cargar mensajes: ${error.message}`, severity: 'error' })
+      console.error('Error al cargar mensajes:', error.message);
+      setSnackbar({ open: true, message: `Error al cargar mensajes: ${error.message}`, severity: 'error' });
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleClienteChange = (event: SelectChangeEvent<number | string>) => {
-    setSelectedCliente(event.target.value as number | '')
-  }
+    setSelectedCliente(event.target.value as number | '');
+  };
 
   const handleOpenDialog = () => {
-    setOpenDialog(true)
-  }
+    setOpenDialog(true);
+  };
 
   const handleCloseDialog = () => {
-    setOpenDialog(false)
-  }
+    setOpenDialog(false);
+  };
 
   const handleEnviarMensaje = async () => {
     if (!selectedCliente || !nuevoMensaje.trim()) {
-      setSnackbar({ open: true, message: 'Selecciona un cliente y escribe un mensaje', severity: 'error' })
-      return
+      setSnackbar({ open: true, message: 'Selecciona un cliente y escribe un mensaje', severity: 'error' });
+      return;
     }
 
     try {
-      // Guardar mensaje en la base de datos
       const { error } = await supabase
         .from('mensajes')
         .insert([
           {
             cliente_id: selectedCliente,
             contenido: nuevoMensaje,
-            tipo: 'enviado'
-          }
-        ])
+            tipo: 'enviado',
+          },
+        ]);
 
-      if (error) throw error
+      if (error) throw error;
 
-      // Obtener el cliente seleccionado
-      const cliente = clientes.find(c => c.id === selectedCliente)
-      
-      // Aquí se podría integrar con la API de WhatsApp para enviar el mensaje real
-      // Por ahora, solo simulamos el envío abriendo WhatsApp Web
+      const cliente = clientes.find((c) => c.id === selectedCliente);
+
       if (cliente) {
-        const formattedPhone = cliente.telefono.replace(/\D/g, '')
-        window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(nuevoMensaje)}`, '_blank')
+        const formattedPhone = cliente.telefono.replace(/\D/g, '');
+        window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(nuevoMensaje)}`, '_blank');
       }
 
-      setNuevoMensaje('')
-      setSnackbar({ open: true, message: 'Mensaje enviado correctamente', severity: 'success' })
-      fetchMensajes(Number(selectedCliente))
+      setNuevoMensaje('');
+      setSnackbar({ open: true, message: 'Mensaje enviado correctamente', severity: 'success' });
+      fetchMensajes(Number(selectedCliente));
     } catch (error: any) {
-      console.error('Error al enviar mensaje:', error.message)
-      setSnackbar({ open: true, message: `Error al enviar mensaje: ${error.message}`, severity: 'error' })
+      console.error('Error al enviar mensaje:', error.message);
+      setSnackbar({ open: true, message: `Error al enviar mensaje: ${error.message}`, severity: 'error' });
     }
-  }
+  };
 
   const handleRegistrarMensajeRecibido = async () => {
     if (!selectedCliente || !nuevoMensaje.trim()) {
-      setSnackbar({ open: true, message: 'Selecciona un cliente y escribe el mensaje recibido', severity: 'error' })
-      return
+      setSnackbar({ open: true, message: 'Selecciona un cliente y escribe el mensaje recibido', severity: 'error' });
+      return;
     }
 
     try {
@@ -152,20 +157,20 @@ const Mensajes = () => {
           {
             cliente_id: selectedCliente,
             contenido: nuevoMensaje,
-            tipo: 'recibido'
-          }
-        ])
+            tipo: 'recibido',
+          },
+        ]);
 
-      if (error) throw error
+      if (error) throw error;
 
-      setNuevoMensaje('')
-      setSnackbar({ open: true, message: 'Mensaje recibido registrado correctamente', severity: 'success' })
-      fetchMensajes(Number(selectedCliente))
+      setNuevoMensaje('');
+      setSnackbar({ open: true, message: 'Mensaje recibido registrado correctamente', severity: 'success' });
+      fetchMensajes(Number(selectedCliente));
     } catch (error: any) {
-      console.error('Error al registrar mensaje recibido:', error.message)
-      setSnackbar({ open: true, message: `Error al registrar mensaje: ${error.message}`, severity: 'error' })
+      console.error('Error al registrar mensaje recibido:', error.message);
+      setSnackbar({ open: true, message: `Error al registrar mensaje: ${error.message}`, severity: 'error' });
     }
-  }
+  };
 
   const handleDeleteMensaje = async (id: number) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este mensaje?')) {
@@ -173,28 +178,28 @@ const Mensajes = () => {
         const { error } = await supabase
           .from('mensajes')
           .delete()
-          .eq('id', id)
+          .eq('id', id);
 
-        if (error) throw error
-        setSnackbar({ open: true, message: 'Mensaje eliminado correctamente', severity: 'success' })
-        fetchMensajes(Number(selectedCliente))
+        if (error) throw error;
+        setSnackbar({ open: true, message: 'Mensaje eliminado correctamente', severity: 'success' });
+        fetchMensajes(Number(selectedCliente));
       } catch (error: any) {
-        console.error('Error al eliminar mensaje:', error.message)
-        setSnackbar({ open: true, message: `Error al eliminar mensaje: ${error.message}`, severity: 'error' })
+        console.error('Error al eliminar mensaje:', error.message);
+        setSnackbar({ open: true, message: `Error al eliminar mensaje: ${error.message}`, severity: 'error' });
       }
     }
-  }
+  };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
+    const date = new Date(dateString);
     return new Intl.DateTimeFormat('es-ES', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
-    }).format(date)
-  }
+      minute: '2-digit',
+    }).format(date);
+  };
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -211,6 +216,7 @@ const Mensajes = () => {
             value={selectedCliente}
             onChange={handleClienteChange}
             label="Seleccionar Cliente"
+            aria-label="Seleccionar cliente"
           >
             <MenuItem value="">
               <em>Seleccione un cliente</em>
@@ -229,7 +235,7 @@ const Mensajes = () => {
           <Paper sx={{ p: 2, mb: 3, maxHeight: '50vh', overflow: 'auto' }}>
             {loading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                <CircularProgress />
+                <CircularProgress aria-label="Cargando mensajes" />
               </Box>
             ) : mensajes.length > 0 ? (
               <List>
@@ -242,12 +248,12 @@ const Mensajes = () => {
                         justifyContent: mensaje.tipo === 'enviado' ? 'flex-end' : 'flex-start',
                         '& .MuiListItemText-root': {
                           maxWidth: '70%',
-                        }
+                        },
                       }}
                       secondaryAction={
                         <IconButton
                           edge="end"
-                          aria-label="delete"
+                          aria-label={`Eliminar mensaje ${mensaje.contenido}`}
                           onClick={() => handleDeleteMensaje(mensaje.id)}
                         >
                           <DeleteIcon />
@@ -256,7 +262,7 @@ const Mensajes = () => {
                     >
                       {mensaje.tipo === 'recibido' && (
                         <ListItemAvatar>
-                          <Avatar>{mensaje.cliente?.nombre.charAt(0) || '?'}</Avatar>
+                          <Avatar>{mensaje.cliente?.nombre?.charAt(0) || '?'}</Avatar>
                         </ListItemAvatar>
                       )}
                       <ListItemText
@@ -295,6 +301,7 @@ const Mensajes = () => {
                 value={nuevoMensaje}
                 onChange={(e) => setNuevoMensaje(e.target.value)}
                 sx={{ mr: 2 }}
+                aria-label="Escribe un mensaje"
               />
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Button
@@ -303,6 +310,7 @@ const Mensajes = () => {
                   endIcon={<SendIcon />}
                   onClick={handleEnviarMensaje}
                   disabled={!nuevoMensaje.trim()}
+                  aria-label="Enviar mensaje"
                 >
                   Enviar
                 </Button>
@@ -311,6 +319,7 @@ const Mensajes = () => {
                   color="secondary"
                   onClick={handleRegistrarMensajeRecibido}
                   disabled={!nuevoMensaje.trim()}
+                  aria-label="Registrar mensaje recibido"
                 >
                   Registrar Recibido
                 </Button>
@@ -329,6 +338,7 @@ const Mensajes = () => {
             startIcon={<AddIcon />}
             onClick={handleOpenDialog}
             sx={{ mt: 2 }}
+            aria-label="Agregar nuevo cliente"
           >
             Agregar Nuevo Cliente
           </Button>
@@ -340,6 +350,7 @@ const Mensajes = () => {
         open={snackbar.open}
         autoHideDuration={6000}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
@@ -359,21 +370,22 @@ const Mensajes = () => {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancelar</Button>
+          <Button onClick={handleCloseDialog} aria-label="Cancelar">Cancelar</Button>
           <Button
             onClick={() => {
-              handleCloseDialog()
-              window.location.href = '/clientes'
+              handleCloseDialog();
+              window.location.href = '/clientes';
             }}
             variant="contained"
             color="primary"
+            aria-label="Ir a gestión de clientes"
           >
             Ir a Gestión de Clientes
           </Button>
         </DialogActions>
       </Dialog>
     </Container>
-  )
-}
+  );
+};
 
-export default Mensajes
+export default Mensajes;

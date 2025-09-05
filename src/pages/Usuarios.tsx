@@ -3,7 +3,7 @@ import {
   Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, TextField, Dialog, DialogActions, DialogContent,
   DialogTitle, Box, IconButton, CircularProgress, Snackbar, Alert, TablePagination,
-  FormControl, InputLabel, Select, MenuItem, useTheme
+  FormControl, InputLabel, Select, MenuItem, useTheme,
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
 import {
@@ -12,7 +12,7 @@ import {
   Delete as DeleteIcon,
   AdminPanelSettings as AdminIcon,
   Support as AsesorIcon,
-  Person as ClienteIcon
+  Person as ClienteIcon,
 } from '@mui/icons-material';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -25,6 +25,7 @@ type Usuario = {
   rol: 'administrador' | 'asesor' | 'cliente';
   telefono: string | null;
   created_at: string;
+  password?: string; // Añadido para creación de usuarios
 };
 
 const Usuarios = () => {
@@ -47,7 +48,7 @@ const Usuarios = () => {
 
   const fetchUserRole = async () => {
     if (!user) return;
-    
+
     try {
       const { data, error } = await supabase
         .from('perfiles_usuario')
@@ -66,7 +67,7 @@ const Usuarios = () => {
     try {
       setLoading(true);
       const { data, error } = await supabase.rpc('get_usuarios_con_perfiles');
-      
+
       if (error) throw error;
       setUsuarios(data || []);
     } catch (error: any) {
@@ -87,7 +88,8 @@ const Usuarios = () => {
         nombre: '',
         apellido: '',
         rol: 'cliente',
-        telefono: ''
+        telefono: '',
+        password: '', // Inicializar password para nuevos usuarios
       });
       setIsEditing(false);
     }
@@ -105,9 +107,9 @@ const Usuarios = () => {
   };
 
   const handleRoleChange = (event: SelectChangeEvent) => {
-    setCurrentUsuario({ 
-      ...currentUsuario, 
-      rol: event.target.value as 'administrador' | 'asesor' | 'cliente' 
+    setCurrentUsuario({
+      ...currentUsuario,
+      rol: event.target.value as 'administrador' | 'asesor' | 'cliente',
     });
   };
 
@@ -119,14 +121,13 @@ const Usuarios = () => {
       }
 
       if (isEditing) {
-        const { error } = await supabase
-          .rpc('actualizar_usuario', {
-            usuario_id: currentUsuario.id,
-            nuevo_nombre: currentUsuario.nombre,
-            nuevo_apellido: currentUsuario.apellido,
-            nuevo_rol: currentUsuario.rol,
-            nuevo_telefono: currentUsuario.telefono
-          });
+        const { error } = await supabase.rpc('actualizar_usuario', {
+          usuario_id: currentUsuario.id,
+          nuevo_nombre: currentUsuario.nombre,
+          nuevo_apellido: currentUsuario.apellido,
+          nuevo_rol: currentUsuario.rol,
+          nuevo_telefono: currentUsuario.telefono,
+        });
 
         if (error) throw error;
         setSnackbar({ open: true, message: 'Usuario actualizado correctamente', severity: 'success' });
@@ -136,15 +137,14 @@ const Usuarios = () => {
           return;
         }
 
-        const { error } = await supabase
-          .rpc('crear_usuario_con_rol', {
-            email: currentUsuario.email,
-            password: currentUsuario.password,
-            nombre: currentUsuario.nombre,
-            apellido: currentUsuario.apellido,
-            rol: currentUsuario.rol,
-            telefono: currentUsuario.telefono
-          });
+        const { error } = await supabase.rpc('crear_usuario_con_rol', {
+          email: currentUsuario.email,
+          password: currentUsuario.password,
+          nombre: currentUsuario.nombre,
+          apellido: currentUsuario.apellido,
+          rol: currentUsuario.rol,
+          telefono: currentUsuario.telefono,
+        });
 
         if (error) throw error;
         setSnackbar({ open: true, message: 'Usuario creado correctamente', severity: 'success' });
@@ -161,8 +161,7 @@ const Usuarios = () => {
   const handleDeleteUsuario = async (id: string) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
       try {
-        const { error } = await supabase
-          .rpc('eliminar_usuario', { usuario_id: id });
+        const { error } = await supabase.rpc('eliminar_usuario', { usuario_id: id });
 
         if (error) throw error;
         setSnackbar({ open: true, message: 'Usuario eliminado correctamente', severity: 'success' });
@@ -199,11 +198,7 @@ const Usuarios = () => {
   if (userRole !== 'administrador') {
     return (
       <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Paper sx={{ 
-          p: 3, 
-          borderRadius: theme.shape.borderRadius, 
-          boxShadow: theme.shadows[2] 
-        }}>
+        <Paper sx={{ p: 3, borderRadius: theme.shape.borderRadius, boxShadow: theme.shadows[2] }}>
           <Typography variant="h6" component="h2" gutterBottom sx={{ fontWeight: '500' }}>
             Acceso denegado
           </Typography>
@@ -218,17 +213,8 @@ const Usuarios = () => {
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       {/* Encabezado */}
-      <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        mb: theme.spacing(3) 
-      }}>
-        <Typography 
-          variant="h5" 
-          component="h1" 
-          sx={{ fontWeight: '600', color: theme.palette.text.primary }}
-        >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: theme.spacing(3) }}>
+        <Typography variant="h5" component="h1" sx={{ fontWeight: '600', color: theme.palette.text.primary }}>
           Gestión de Usuarios
         </Typography>
         <Button
@@ -236,12 +222,7 @@ const Usuarios = () => {
           color="primary"
           startIcon={<AddIcon />}
           onClick={() => handleOpenDialog()}
-          sx={{ 
-            borderRadius: theme.shape.borderRadius,
-            px: 3,
-            py: 1,
-            fontSize: '0.9rem'
-          }}
+          sx={{ borderRadius: theme.shape.borderRadius, px: 3, py: 1, fontSize: '0.9rem' }}
           aria-label="Crear nuevo usuario"
         >
           Nuevo Usuario
@@ -249,12 +230,7 @@ const Usuarios = () => {
       </Box>
 
       {/* Tabla */}
-      <Paper sx={{ 
-        width: '100%', 
-        borderRadius: theme.shape.borderRadius, 
-        boxShadow: theme.shadows[2],
-        overflow: 'hidden'
-      }}>
+      <Paper sx={{ width: '100%', borderRadius: theme.shape.borderRadius, boxShadow: theme.shadows[2], overflow: 'hidden' }}>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
             <CircularProgress aria-label="Cargando usuarios" />
@@ -265,47 +241,22 @@ const Usuarios = () => {
               <Table stickyHeader aria-label="Tabla de usuarios">
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ 
-                      fontWeight: '600', 
-                      bgcolor: theme.palette.background.default,
-                      color: theme.palette.text.primary
-                    }}>
+                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary }}>
                       Email
                     </TableCell>
-                    <TableCell sx={{ 
-                      fontWeight: '600', 
-                      bgcolor: theme.palette.background.default,
-                      color: theme.palette.text.primary
-                    }}>
+                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary }}>
                       Nombre
                     </TableCell>
-                    <TableCell sx={{ 
-                      fontWeight: '600', 
-                      bgcolor: theme.palette.background.default,
-                      color: theme.palette.text.primary
-                    }}>
+                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary }}>
                       Apellido
                     </TableCell>
-                    <TableCell sx={{ 
-                      fontWeight: '600', 
-                      bgcolor: theme.palette.background.default,
-                      color: theme.palette.text.primary
-                    }}>
+                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary }}>
                       Rol
                     </TableCell>
-                    <TableCell sx={{ 
-                      fontWeight: '600', 
-                      bgcolor: theme.palette.background.default,
-                      color: theme.palette.text.primary
-                    }}>
+                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary }}>
                       Teléfono
                     </TableCell>
-                    <TableCell sx={{ 
-                      fontWeight: '600', 
-                      bgcolor: theme.palette.background.default,
-                      color: theme.palette.text.primary,
-                      textAlign: 'center'
-                    }}>
+                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary, textAlign: 'center' }}>
                       Acciones
                     </TableCell>
                   </TableRow>
@@ -314,16 +265,7 @@ const Usuarios = () => {
                   {usuarios
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                     .map((usuario) => (
-                      <TableRow 
-                        hover 
-                        key={usuario.id}
-                        sx={{ 
-                          '&:hover': { 
-                            bgcolor: theme.palette.action.hover 
-                          },
-                          transition: 'background-color 0.2s'
-                        }}
-                      >
+                      <TableRow hover key={usuario.id} sx={{ '&:hover': { bgcolor: theme.palette.action.hover }, transition: 'background-color 0.2s' }}>
                         <TableCell>{usuario.email}</TableCell>
                         <TableCell>{usuario.nombre || '-'}</TableCell>
                         <TableCell>{usuario.apellido || '-'}</TableCell>
@@ -375,21 +317,8 @@ const Usuarios = () => {
       </Paper>
 
       {/* Diálogo para agregar/editar usuario */}
-      <Dialog 
-        open={openDialog} 
-        onClose={handleCloseDialog} 
-        maxWidth="sm" 
-        fullWidth
-        sx={{ 
-          '& .MuiDialog-paper': {
-            borderRadius: theme.shape.borderRadius,
-            p: 2,
-          }
-        }}
-      >
-        <DialogTitle sx={{ fontWeight: '500' }}>
-          {isEditing ? 'Editar Usuario' : 'Nuevo Usuario'}
-        </DialogTitle>
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth sx={{ '& .MuiDialog-paper': { borderRadius: theme.shape.borderRadius, p: 2 } }}>
+        <DialogTitle sx={{ fontWeight: '500' }}>{isEditing ? 'Editar Usuario' : 'Nuevo Usuario'}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -468,21 +397,14 @@ const Usuarios = () => {
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button 
-            onClick={handleCloseDialog} 
-            color="inherit"
-            sx={{ borderRadius: theme.shape.borderRadius }}
-          >
+          <Button onClick={handleCloseDialog} color="inherit" sx={{ borderRadius: theme.shape.borderRadius }} aria-label="Cancelar">
             Cancelar
           </Button>
-          <Button 
-            onClick={handleSaveUsuario} 
-            variant="contained" 
+          <Button
+            onClick={handleSaveUsuario}
+            variant="contained"
             color="primary"
-            sx={{ 
-              borderRadius: theme.shape.borderRadius,
-              px: 3
-            }}
+            sx={{ borderRadius: theme.shape.borderRadius, px: 3 }}
             aria-label="Guardar usuario"
           >
             Guardar
