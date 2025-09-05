@@ -28,8 +28,8 @@ import { supabase } from '../services/supabase';
 
 type Cliente = {
   id: string;
-  nombre: string;
-  telefono: string;
+  nombre: string | null;
+  telefono: string | null;
   email: string | null;
   ruc: string | null;
   razon_social: string | null;
@@ -118,7 +118,7 @@ const Clientes = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setCurrentCliente({ ...currentCliente, [name]: value });
+    setCurrentCliente({ ...currentCliente, [name]: value || null });
   };
 
   const handleDateChange = (field: string, newDate: Date | null) => {
@@ -135,15 +135,10 @@ const Clientes = () => {
 
   const handleSaveCliente = async () => {
     try {
-      if (!currentCliente.nombre || !currentCliente.telefono) {
-        setSnackbar({ open: true, message: 'Nombre y teléfono son obligatorios', severity: 'error' });
-        return;
-      }
-
       const clienteData = {
         id: isEditing ? currentCliente.id : crypto.randomUUID(),
-        nombre: currentCliente.nombre,
-        telefono: currentCliente.telefono,
+        nombre: currentCliente.nombre || null,
+        telefono: currentCliente.telefono || null,
         email: currentCliente.email || null,
         ruc: currentCliente.ruc || null,
         razon_social: currentCliente.razon_social || null,
@@ -212,21 +207,16 @@ const Clientes = () => {
       }
 
       // Procesar las filas (excluyendo los encabezados)
-      const clientesData: Partial<Cliente>[] = (jsonData.slice(1) as any[][]).map((row, index) => {
+      const clientesData: Partial<Cliente>[] = (jsonData.slice(1) as any[][]).map((row) => {
         const rowData = row.reduce((acc, value, i) => {
           acc[headers[i]] = value === undefined || value === '' ? null : value;
           return acc;
         }, {} as any);
 
-        if (!rowData.nombre || !rowData.telefono) {
-          throw new Error(`Fila ${index + 2}: 'nombre' y 'telefono' son obligatorios.`);
-        }
-
         // Validar formato de fechas
         const validateDate = (date: any) => {
           if (!date) return null;
           let parsedDate: Date;
-          // Manejar fechas como strings ISO o como números de serie de Excel
           if (typeof date === 'string') {
             parsedDate = new Date(date);
           } else if (typeof date === 'number') {
@@ -239,8 +229,8 @@ const Clientes = () => {
 
         return {
           id: crypto.randomUUID(),
-          nombre: rowData.nombre,
-          telefono: String(rowData.telefono),
+          nombre: rowData.nombre || null,
+          telefono: rowData.telefono ? String(rowData.telefono) : null,
           email: rowData.email || null,
           ruc: rowData.ruc ? String(rowData.ruc) : null,
           razon_social: rowData.razon_social || null,
@@ -299,13 +289,15 @@ const Clientes = () => {
     }
   };
 
-  const handleWhatsAppClick = (telefono: string) => {
+  const handleWhatsAppClick = (telefono: string | null) => {
+    if (!telefono) return;
     const numeroLimpio = telefono.replace(/\D/g, '');
     const whatsappUrl = `https://wa.me/${numeroLimpio}`;
     window.open(whatsappUrl, '_blank');
   };
 
-  const handlePhoneCall = (telefono: string) => {
+  const handlePhoneCall = (telefono: string | null) => {
+    if (!telefono) return;
     const numeroLimpio = telefono.replace(/\D/g, '');
     const telUrl = `tel:${numeroLimpio}`;
     window.location.href = telUrl;
@@ -356,38 +348,40 @@ const Clientes = () => {
       case 0: // Información general
         return (
           <TableRow key={cliente.id}>
-            <TableCell>{cliente.nombre}</TableCell>
+            <TableCell>{cliente.nombre || '-'}</TableCell>
             <TableCell>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Tooltip title="Llamar">
-                  <IconButton
-                    size="small"
-                    color="primary"
+              {cliente.telefono ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Tooltip title="Llamar">
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={() => handlePhoneCall(cliente.telefono)}
+                    >
+                      <PhoneIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Box
+                    component="span"
                     onClick={() => handlePhoneCall(cliente.telefono)}
+                    sx={{
+                      cursor: 'pointer',
+                      '&:hover': { textDecoration: 'underline', color: theme.palette.primary.main },
+                    }}
                   >
-                    <PhoneIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-                <Box
-                  component="span"
-                  onClick={() => handlePhoneCall(cliente.telefono)}
-                  sx={{
-                    cursor: 'pointer',
-                    '&:hover': { textDecoration: 'underline', color: theme.palette.primary.main },
-                  }}
-                >
-                  {cliente.telefono}
+                    {cliente.telefono}
+                  </Box>
+                  <Tooltip title="Enviar WhatsApp">
+                    <IconButton
+                      size="small"
+                      color="success"
+                      onClick={() => handleWhatsAppClick(cliente.telefono)}
+                    >
+                      <WhatsAppIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
-                <Tooltip title="Enviar WhatsApp">
-                  <IconButton
-                    size="small"
-                    color="success"
-                    onClick={() => handleWhatsAppClick(cliente.telefono)}
-                  >
-                    <WhatsAppIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Box>
+              ) : '-'}
             </TableCell>
             <TableCell>{cliente.email || '-'}</TableCell>
             <TableCell>
@@ -403,13 +397,15 @@ const Clientes = () => {
               )}
             </TableCell>
             <TableCell align="center">
-              <IconButton
-                color="primary"
-                onClick={() => handleWhatsAppClick(cliente.telefono)}
-                title="Enviar WhatsApp"
-              >
-                <WhatsAppIcon />
-              </IconButton>
+              {cliente.telefono && (
+                <IconButton
+                  color="primary"
+                  onClick={() => handleWhatsAppClick(cliente.telefono)}
+                  title="Enviar WhatsApp"
+                >
+                  <WhatsAppIcon />
+                </IconButton>
+              )}
               <IconButton
                 color="primary"
                 onClick={() => handleOpenDialog(cliente)}
@@ -430,7 +426,7 @@ const Clientes = () => {
       case 1: // Información empresarial
         return (
           <TableRow key={cliente.id}>
-            <TableCell>{cliente.nombre}</TableCell>
+            <TableCell>{cliente.nombre || '-'}</TableCell>
             <TableCell>{cliente.razon_social || '-'}</TableCell>
             <TableCell>{cliente.representante || '-'}</TableCell>
             <TableCell>{cliente.ruc || '-'}</TableCell>
@@ -448,7 +444,7 @@ const Clientes = () => {
       case 2: // Programación
         return (
           <TableRow key={cliente.id}>
-            <TableCell>{cliente.nombre}</TableCell>
+            <TableCell>{cliente.nombre || '-'}</TableCell>
             <TableCell>
               {cliente.fecha_proxima_llamada ? (
                 <Chip
@@ -646,7 +642,6 @@ const Clientes = () => {
                     variant="outlined"
                     value={currentCliente.nombre || ''}
                     onChange={handleInputChange}
-                    required
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
@@ -659,7 +654,6 @@ const Clientes = () => {
                     variant="outlined"
                     value={currentCliente.telefono || ''}
                     onChange={handleInputChange}
-                    required
                     helperText="Incluye el código de país (ej: +51987654321)"
                   />
                 </Grid>
@@ -789,8 +783,8 @@ const Clientes = () => {
             </Typography>
             <Typography variant="body2" component="div">
               <ul>
-                <li><strong>nombre</strong>: Nombre del cliente (obligatorio)</li>
-                <li><strong>telefono</strong>: Teléfono con código de país, ej: +51987654321 (obligatorio)</li>
+                <li><strong>nombre</strong>: Nombre del cliente (opcional)</li>
+                <li><strong>telefono</strong>: Teléfono con código de país, ej: +51987654321 (opcional)</li>
                 <li><strong>email</strong>: Correo electrónico (opcional)</li>
                 <li><strong>ruc</strong>: RUC de la empresa (opcional)</li>
                 <li><strong>razon_social</strong>: Razón social de la empresa (opcional)</li>
@@ -804,7 +798,7 @@ const Clientes = () => {
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
               Descarga un <Link href="#" onClick={() => downloadSampleExcel()}>archivo Excel de ejemplo</Link> para guiarte.
               <br />
-              <strong>Nota:</strong> Usa la primera hoja del archivo Excel. Asegúrate de que los encabezados coincidan exactamente con los indicados.
+              <strong>Nota:</strong> Usa la primera hoja del archivo Excel. Asegúrate de que los encabezados coincidan exactamente con los indicados. Todos los campos son opcionales.
             </Typography>
           </Box>
           <Input
@@ -872,7 +866,7 @@ const downloadSampleExcel = () => {
       fecha_proxima_reunion: "2025-09-15 14:00:00",
     },
     {
-      nombre: "María López",
+      nombre: "",
       telefono: "+51912345678",
       email: "maria.lopez@example.com",
       ruc: "98765432109",
@@ -885,7 +879,7 @@ const downloadSampleExcel = () => {
     },
     {
       nombre: "Carlos Gómez",
-      telefono: "+51955556666",
+      telefono: "",
       email: "",
       ruc: "",
       razon_social: "",
@@ -896,8 +890,8 @@ const downloadSampleExcel = () => {
       fecha_proxima_reunion: "",
     },
     {
-      nombre: "Ana Torres",
-      telefono: "+51977778888",
+      nombre: "",
+      telefono: "",
       email: "ana.torres@example.com",
       ruc: "45678912345",
       razon_social: "Torres Consulting",
@@ -912,7 +906,7 @@ const downloadSampleExcel = () => {
   const worksheet = XLSX.utils.json_to_sheet(sampleData);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Clientes');
-  
+
   // Ajustar el ancho de las columnas para mejor legibilidad
   worksheet['!cols'] = [
     { wch: 20 }, // nombre
