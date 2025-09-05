@@ -11,8 +11,8 @@ import { supabase } from '../services/supabase';
 
 type Cliente = {
   id: string;
-  nombre: string;
-  telefono: string;
+  nombre: string | null;
+  telefono: string | null;
 };
 
 type Mensaje = {
@@ -63,10 +63,14 @@ const Mensajes = () => {
       const { data, error } = await supabase
         .from('clientes')
         .select('id, nombre, telefono')
-        .order('nombre');
+        .order('created_at', { ascending: false }); // Cambiado a created_at para reflejar posibles nuevos clientes
 
       if (error) throw error;
+      console.log('Clientes obtenidos:', data); // Log para depuración
       setClientes(data || []);
+      if (data?.length === 0) {
+        setSnackbar({ open: true, message: 'No se encontraron clientes en la base de datos', severity: 'warning' });
+      }
     } catch (error: any) {
       console.error('Error al cargar clientes:', error.message);
       setSnackbar({ open: true, message: `Error al cargar clientes: ${error.message}`, severity: 'error' });
@@ -90,19 +94,19 @@ const Mensajes = () => {
           clientes!mensajes_cliente_id_fkey (id, nombre, telefono)
         `)
         .eq('cliente_id', clienteId)
-        .order('created_at');
+        .order('created_at', { ascending: true });
 
       if (error) throw error;
-    setMensajes(
-      data?.map((item) => ({
+      const mensajesMapped = data?.map((item) => ({
         id: item.id,
         cliente_id: item.cliente_id,
         contenido: item.contenido,
         tipo: item.tipo,
         created_at: item.created_at,
-        cliente: item.clientes && item.clientes.length > 0 ? item.clientes[0] : undefined, // Toma el primer cliente del arreglo
-      })) || []
-    );
+        cliente: item.clientes && item.clientes.length > 0 ? item.clientes[0] : undefined,
+      })) || [];
+      console.log('Mensajes obtenidos para cliente_id:', clienteId, mensajesMapped); // Log para depuración
+      setMensajes(mensajesMapped);
     } catch (error: any) {
       console.error('Error al cargar mensajes:', error.message);
       setSnackbar({ open: true, message: `Error al cargar mensajes: ${error.message}`, severity: 'error' });
@@ -114,7 +118,7 @@ const Mensajes = () => {
   // Handle client selection
   const handleClienteChange = (event: SelectChangeEvent<string>) => {
     const value = event.target.value;
-    console.log('Selected cliente:', value);
+    console.log('Selected cliente:', value); // Log para depuración
     setSelectedCliente(value);
   };
 
@@ -128,15 +132,17 @@ const Mensajes = () => {
 
   // Add new client
   const handleAddCliente = async () => {
-    if (!nuevoClienteNombre.trim() || !nuevoClienteTelefono.trim()) {
-      setSnackbar({ open: true, message: 'Ingresa nombre y teléfono del cliente', severity: 'error' });
-      return;
-    }
-
+    // Permitir agregar clientes incluso sin nombre o teléfono
     try {
+      const clienteData = {
+        id: crypto.randomUUID(),
+        nombre: nuevoClienteNombre.trim() || null,
+        telefono: nuevoClienteTelefono.trim() || null,
+      };
+
       const { error } = await supabase
         .from('clientes')
-        .insert([{ nombre: nuevoClienteNombre, telefono: nuevoClienteTelefono }]);
+        .insert([clienteData]);
 
       if (error) throw error;
       setSnackbar({ open: true, message: 'Cliente agregado correctamente', severity: 'success' });
@@ -169,13 +175,15 @@ const Mensajes = () => {
       if (error) throw error;
 
       const cliente = clientes.find((c) => c.id === selectedCliente);
-      if (cliente) {
+      if (cliente?.telefono) {
         const formattedPhone = cliente.telefono.replace(/\D/g, '');
         window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(nuevoMensaje)}`, '_blank');
+      } else {
+        setSnackbar({ open: true, message: 'Mensaje registrado, pero no se envió por WhatsApp (sin teléfono)', severity: 'warning' });
       }
 
       setNuevoMensaje('');
-      setSnackbar({ open: true, message: 'Mensaje enviado correctamente', severity: 'success' });
+      setSnackbar({ open: true, message: 'Mensaje registrado correctamente', severity: 'success' });
       fetchMensajes(selectedCliente);
     } catch (error: any) {
       console.error('Error al enviar mensaje:', error.message);
@@ -243,6 +251,19 @@ const Mensajes = () => {
     }).format(date);
   };
 
+  // Render client name for display
+  const getClienteDisplayName = (cliente: Cliente) => {
+    if (cliente.nombre && cliente.telefono) {
+      return `${cliente.nombre} (${cliente.telefono})`;
+    } else if (cliente.nombre) {
+      return cliente.nombre;
+    } else if (cliente.telefono) {
+      return cliente.telefono;
+    } else {
+      return `Cliente ${cliente.id.slice(0, 8)}...`;
+    }
+  };
+
   return (
     <Container
       maxWidth="lg"
@@ -284,13 +305,24 @@ const Mensajes = () => {
             <MenuItem value="">
               <em>Seleccione un cliente</em>
             </MenuItem>
-            {clientes.map((cliente) => (
-              <MenuItem key={cliente.id} value={cliente.id}>
-                {cliente.nombre} ({cliente.telefono})
+            {clientes.length > 0 ? (
+              clientes.map((cliente) => (
+                <MenuItem key={cliente.id} value={cliente.id}>
+                  {getClienteDisplayName(cliente)}
+                </MenuItem>
+              ))
+            ) : (
+              <MenuItem disabled>
+                <em>No hay clientes disponibles</em>
               </MenuItem>
-            ))}
+            )}
           </Select>
         </FormControl>
+        {clientes.length === 0 && !loading && (
+          <Typography color="text.secondary" sx={{ mt: 2 }}>
+            No se encontraron clientes. Agrega un nuevo cliente para comenzar.
+          </Typography>
+        )}
       </Box>
 
       {selectedCliente && isValidUUID(selectedCliente) ? (
@@ -472,7 +504,7 @@ const Mensajes = () => {
         <DialogContent>
           <TextField
             fullWidth
-            label="Nombre"
+            label="Nombre (opcional)"
             value={nuevoClienteNombre}
             onChange={(e) => setNuevoClienteNombre(e.target.value)}
             sx={{ mt: 2 }}
@@ -480,12 +512,13 @@ const Mensajes = () => {
           />
           <TextField
             fullWidth
-            label="Teléfono"
+            label="Teléfono (opcional)"
             value={nuevoClienteTelefono}
             onChange={(e) => setNuevoClienteTelefono(e.target.value)}
             sx={{ mt: 2 }}
             aria-label="Teléfono del cliente"
             inputProps={{ pattern: '[0-9]*' }}
+            helperText="Incluye el código de país (ej: +51987654321)"
           />
         </DialogContent>
         <DialogActions>
