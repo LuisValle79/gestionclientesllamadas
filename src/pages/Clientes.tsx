@@ -4,6 +4,7 @@ import {
   TableHead, TableRow, Button, TextField, Dialog, DialogActions, DialogContent,
   DialogTitle, IconButton, CircularProgress, Snackbar, Alert, TablePagination,
   Tabs, Tab, Chip, Tooltip, FormControl, InputLabel, Select, MenuItem, useTheme,
+  Input, Link,
 } from '@mui/material';
 import { Grid } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
@@ -20,18 +21,20 @@ import {
   Phone as PhoneIcon,
   Event as EventIcon,
   CalendarMonth as CalendarIcon,
+  Upload as UploadIcon,
 } from '@mui/icons-material';
+import * as XLSX from 'xlsx';
 import { supabase } from '../services/supabase';
 
 type Cliente = {
   id: string;
   nombre: string;
   telefono: string;
-  email: string;
-  ruc: string;
-  razon_social: string;
-  representante: string;
-  notas: string;
+  email: string | null;
+  ruc: string | null;
+  razon_social: string | null;
+  representante: string | null;
+  notas: string | null;
   fecha_proxima_llamada: string | null;
   fecha_proxima_visita: string | null;
   fecha_proxima_reunion: string | null;
@@ -43,8 +46,11 @@ const Clientes = () => {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
+  const [openImportDialog, setOpenImportDialog] = useState(false);
   const [currentCliente, setCurrentCliente] = useState<Partial<Cliente>>({});
   const [isEditing, setIsEditing] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -62,7 +68,6 @@ const Clientes = () => {
         .from('clientes')
         .select('*');
 
-      // Aplicar filtros si es necesario
       if (filtro === 'proxima_llamada') {
         query = query.not('fecha_proxima_llamada', 'is', null);
       } else if (filtro === 'proxima_visita') {
@@ -94,9 +99,21 @@ const Clientes = () => {
     setOpenDialog(true);
   };
 
+  const handleOpenImportDialog = () => {
+    setOpenImportDialog(true);
+    setImportFile(null);
+    setImportError(null);
+  };
+
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setCurrentCliente({});
+  };
+
+  const handleCloseImportDialog = () => {
+    setOpenImportDialog(false);
+    setImportFile(null);
+    setImportError(null);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -160,6 +177,108 @@ const Clientes = () => {
       console.error('Error al guardar cliente:', error.message);
       setSnackbar({ open: true, message: `Error al guardar cliente: ${error.message}`, severity: 'error' });
     }
+  };
+
+  const handleImportClientes = async () => {
+    if (!importFile) {
+      setImportError('Por favor, selecciona un archivo Excel (.xls o .xlsx).');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const arrayBuffer = await importFile.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+
+      // Verificar que el archivo tenga datos
+      if (jsonData.length < 2) {
+        throw new Error('El archivo Excel está vacío o no tiene datos válidos.');
+      }
+
+      // Obtener encabezados (primera fila)
+      const headers = jsonData[0] as string[];
+      const expectedHeaders = [
+        'nombre', 'telefono', 'email', 'ruc', 'razon_social', 'representante',
+        'notas', 'fecha_proxima_llamada', 'fecha_proxima_visita', 'fecha_proxima_reunion'
+      ];
+
+      // Verificar que los encabezados sean correctos
+      const headersMatch = expectedHeaders.every((header, index) => header === headers[index]?.toLowerCase());
+      if (!headersMatch) {
+        throw new Error('Los encabezados del archivo Excel no coinciden. Descarga el archivo de ejemplo para verificar el formato.');
+      }
+
+      // Procesar las filas (excluyendo los encabezados)
+      const clientesData: Partial<Cliente>[] = (jsonData.slice(1) as any[][]).map((row, index) => {
+        const rowData = row.reduce((acc, value, i) => {
+          acc[headers[i]] = value === undefined || value === '' ? null : value;
+          return acc;
+        }, {} as any);
+
+        if (!rowData.nombre || !rowData.telefono) {
+          throw new Error(`Fila ${index + 2}: 'nombre' y 'telefono' son obligatorios.`);
+        }
+
+        // Validar formato de fechas
+        const validateDate = (date: any) => {
+          if (!date) return null;
+          let parsedDate: Date;
+          // Manejar fechas como strings ISO o como números de serie de Excel
+          if (typeof date === 'string') {
+            parsedDate = new Date(date);
+          } else if (typeof date === 'number') {
+            parsedDate = XLSX.SSF.parse_date_code(date);
+          } else {
+            return null;
+          }
+          return isNaN(parsedDate.getTime()) ? null : parsedDate.toISOString();
+        };
+
+        return {
+          id: crypto.randomUUID(),
+          nombre: rowData.nombre,
+          telefono: String(rowData.telefono),
+          email: rowData.email || null,
+          ruc: rowData.ruc ? String(rowData.ruc) : null,
+          razon_social: rowData.razon_social || null,
+          representante: rowData.representante || null,
+          notas: rowData.notas || null,
+          fecha_proxima_llamada: validateDate(rowData.fecha_proxima_llamada),
+          fecha_proxima_visita: validateDate(rowData.fecha_proxima_visita),
+          fecha_proxima_reunion: validateDate(rowData.fecha_proxima_reunion),
+        };
+      });
+
+      // Dividir en lotes para evitar superar los límites de Supabase
+      const batchSize = 100;
+      for (let i = 0; i < clientesData.length; i += batchSize) {
+        const batch = clientesData.slice(i, i + batchSize);
+        const { error } = await supabase.from('clientes').insert(batch);
+        if (error) throw error;
+      }
+
+      setSnackbar({ open: true, message: `Se importaron ${clientesData.length} clientes correctamente`, severity: 'success' });
+      handleCloseImportDialog();
+      fetchClientes();
+    } catch (error: any) {
+      console.error('Error al importar clientes:', error.message);
+      setImportError(`Error al importar clientes: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    if (file && !file.name.match(/\.(xls|xlsx)$/)) {
+      setImportError('Por favor, selecciona un archivo Excel (.xls o .xlsx).');
+      return;
+    }
+    setImportFile(file);
+    setImportError(null);
   };
 
   const handleDeleteCliente = async (id: string) => {
@@ -415,18 +534,28 @@ const Clientes = () => {
 
   return (
     <Box sx={{ width: '100%', maxWidth: '100%', mt: 4, mb: 4, p: 2 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, gap: 2, flexWrap: 'wrap' }}>
         <Typography variant="h4" component="h1">
           Gestión de Clientes
         </Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpenDialog()}
-        >
-          Nuevo Cliente
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpenDialog()}
+          >
+            Nuevo Cliente
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<UploadIcon />}
+            onClick={handleOpenImportDialog}
+          >
+            Importar Clientes
+          </Button>
+        </Box>
       </Box>
 
       <Box sx={{ mb: 3 }}>
@@ -616,7 +745,7 @@ const Clientes = () => {
                     sx={{ width: '100%' }}
                   />
                 </Grid>
-                <Grid size={{ xs: 12, md: 4 }}>
+                <Grid size={{ xs: 12, sm: 4 }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Próxima Visita
                   </Typography>
@@ -650,6 +779,65 @@ const Clientes = () => {
         </DialogActions>
       </Dialog>
 
+      {/* Diálogo para importación masiva */}
+      <Dialog open={openImportDialog} onClose={handleCloseImportDialog} maxWidth="md" fullWidth>
+        <DialogTitle>Importar Clientes desde Excel</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body1" gutterBottom>
+              Sube un archivo Excel (.xls o .xlsx) con los datos de los clientes. La primera hoja debe tener las siguientes columnas:
+            </Typography>
+            <Typography variant="body2" component="div">
+              <ul>
+                <li><strong>nombre</strong>: Nombre del cliente (obligatorio)</li>
+                <li><strong>telefono</strong>: Teléfono con código de país, ej: +51987654321 (obligatorio)</li>
+                <li><strong>email</strong>: Correo electrónico (opcional)</li>
+                <li><strong>ruc</strong>: RUC de la empresa (opcional)</li>
+                <li><strong>razon_social</strong>: Razón social de la empresa (opcional)</li>
+                <li><strong>representante</strong>: Nombre del representante legal (opcional)</li>
+                <li><strong>notas</strong>: Notas adicionales (opcional)</li>
+                <li><strong>fecha_proxima_llamada</strong>: Fecha y hora, ej: 2025-09-10 10:00:00 o formato Excel (opcional)</li>
+                <li><strong>fecha_proxima_visita</strong>: Fecha y hora (opcional)</li>
+                <li><strong>fecha_proxima_reunion</strong>: Fecha y hora (opcional)</li>
+              </ul>
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Descarga un <Link href="#" onClick={() => downloadSampleExcel()}>archivo Excel de ejemplo</Link> para guiarte.
+              <br />
+              <strong>Nota:</strong> Usa la primera hoja del archivo Excel. Asegúrate de que los encabezados coincidan exactamente con los indicados.
+            </Typography>
+          </Box>
+          <Input
+            type="file"
+            inputProps={{ accept: '.xls,.xlsx' }}
+            onChange={handleFileChange}
+            fullWidth
+            sx={{ mb: 2 }}
+          />
+          {importError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {importError}
+            </Alert>
+          )}
+          {loading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+              <CircularProgress />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseImportDialog}>Cancelar</Button>
+          <Button
+            onClick={handleImportClientes}
+            variant="contained"
+            color="primary"
+            disabled={!importFile || loading}
+          >
+            Importar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Snackbar para notificaciones */}
       <Snackbar
         open={snackbar.open}
@@ -666,6 +854,88 @@ const Clientes = () => {
       </Snackbar>
     </Box>
   );
+};
+
+// Función para descargar un archivo Excel de ejemplo
+const downloadSampleExcel = () => {
+  const sampleData = [
+    {
+      nombre: "Juan Pérez",
+      telefono: "+51987654321",
+      email: "juan.perez@example.com",
+      ruc: "12345678901",
+      razon_social: "Pérez SAC",
+      representante: "Juan Pérez",
+      notas: "Interesado en producto A, requiere seguimiento",
+      fecha_proxima_llamada: "2025-09-10 10:00:00",
+      fecha_proxima_visita: "",
+      fecha_proxima_reunion: "2025-09-15 14:00:00",
+    },
+    {
+      nombre: "María López",
+      telefono: "+51912345678",
+      email: "maria.lopez@example.com",
+      ruc: "98765432109",
+      razon_social: "López EIRL",
+      representante: "María López",
+      notas: "Prefiere contacto por WhatsApp",
+      fecha_proxima_llamada: "",
+      fecha_proxima_visita: "2025-09-12 09:00:00",
+      fecha_proxima_reunion: "",
+    },
+    {
+      nombre: "Carlos Gómez",
+      telefono: "+51955556666",
+      email: "",
+      ruc: "",
+      razon_social: "",
+      representante: "",
+      notas: "Cliente potencial, necesita más información",
+      fecha_proxima_llamada: "2025-09-11 15:30:00",
+      fecha_proxima_visita: "",
+      fecha_proxima_reunion: "",
+    },
+    {
+      nombre: "Ana Torres",
+      telefono: "+51977778888",
+      email: "ana.torres@example.com",
+      ruc: "45678912345",
+      razon_social: "Torres Consulting",
+      representante: "Ana Torres",
+      notas: "",
+      fecha_proxima_llamada: "",
+      fecha_proxima_visita: "2025-09-13 11:00:00",
+      fecha_proxima_reunion: "2025-09-20 16:00:00",
+    },
+  ];
+
+  const worksheet = XLSX.utils.json_to_sheet(sampleData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Clientes');
+  
+  // Ajustar el ancho de las columnas para mejor legibilidad
+  worksheet['!cols'] = [
+    { wch: 20 }, // nombre
+    { wch: 15 }, // telefono
+    { wch: 25 }, // email
+    { wch: 15 }, // ruc
+    { wch: 20 }, // razon_social
+    { wch: 20 }, // representante
+    { wch: 30 }, // notas
+    { wch: 20 }, // fecha_proxima_llamada
+    { wch: 20 }, // fecha_proxima_visita
+    { wch: 20 }, // fecha_proxima_reunion
+  ];
+
+  const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'clientes_ejemplo.xlsx');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };
 
 export default Clientes;
