@@ -14,19 +14,20 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { es } from 'date-fns/locale';
 
 type Cliente = {
-  id: number;
+  id: string; // Cambiado a string para UUID
   nombre: string;
   telefono: string;
 };
 
 type Recordatorio = {
   id: number;
-  cliente_id: number;
+  cliente_id: string; // Cambiado a string para UUID
   titulo: string;
   descripcion: string;
   fecha: string;
   completado: boolean;
   created_at: string;
+  created_by: string;
   cliente?: Cliente;
 };
 
@@ -38,32 +39,77 @@ const Recordatorios = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [currentRecordatorio, setCurrentRecordatorio] = useState<Partial<Recordatorio>>({});
   const [isEditing, setIsEditing] = useState(false);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' });
   const [filtroCompletado, setFiltroCompletado] = useState<string>('pendientes');
 
   useEffect(() => {
+    const checkAdminStatus = async () => {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+          throw new Error('Usuario no autenticado');
+        }
+        const { data, error } = await supabase
+          .from('perfiles_usuario')
+          .select('rol')
+          .eq('id', user.id)
+          .single();
+        if (error) throw error;
+        setIsAdmin(data?.rol === 'administrador');
+      } catch (error: any) {
+        console.error('Error al verificar estado de administrador:', error.message);
+        setSnackbar({ open: true, message: `Error al verificar estado de administrador: ${error.message}`, severity: 'error' });
+      }
+    };
+
+    checkAdminStatus();
     fetchClientes();
     fetchRecordatorios();
   }, [filtroCompletado]);
 
   const fetchClientes = async () => {
     try {
-      const { data, error } = await supabase
+      setLoading(true);
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Usuario no autenticado');
+      }
+
+      let query = supabase
         .from('clientes')
         .select('id, nombre, telefono')
         .order('nombre');
 
+      // Si no es administrador, filtrar por created_by
+      if (!isAdmin) {
+        query = query.eq('created_by', user.id);
+      }
+
+      const { data, error } = await query;
+
       if (error) throw error;
+      console.log('Clientes obtenidos para usuario', user.id, ':', data);
       setClientes(data || []);
+      if (data?.length === 0) {
+        setSnackbar({ open: true, message: 'No se encontraron clientes para este usuario', severity: 'warning' });
+      }
     } catch (error: any) {
       console.error('Error al cargar clientes:', error.message);
       setSnackbar({ open: true, message: `Error al cargar clientes: ${error.message}`, severity: 'error' });
+    } finally {
+      setLoading(false);
     }
   };
 
   const fetchRecordatorios = async () => {
     try {
       setLoading(true);
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Usuario no autenticado');
+      }
+
       let query = supabase
         .from('recordatorios')
         .select(`
@@ -74,9 +120,15 @@ const Recordatorios = () => {
           fecha,
           completado,
           created_at,
+          created_by,
           clientes (id, nombre, telefono)
         `)
         .order('fecha');
+
+      // Si no es administrador, filtrar por created_by
+      if (!isAdmin) {
+        query = query.eq('created_by', user.id);
+      }
 
       if (filtroCompletado === 'pendientes') {
         query = query.eq('completado', false);
@@ -88,18 +140,18 @@ const Recordatorios = () => {
 
       if (error) throw error;
       setRecordatorios(
-data?.map((item: Recordatorio) => ({
-  id: item.id,
-  cliente_id: item.cliente_id,
-  titulo: item.titulo,
-  descripcion: item.descripcion,
-  fecha: item.fecha,
-  completado: item.completado,
-  created_at: item.created_at,
-  cliente: item.cliente,
-})));
-
-      
+        data?.map((item: any) => ({
+          id: item.id,
+          cliente_id: item.cliente_id,
+          titulo: item.titulo,
+          descripcion: item.descripcion,
+          fecha: item.fecha,
+          completado: item.completado,
+          created_at: item.created_at,
+          created_by: item.created_by,
+          cliente: item.clientes, // Ajustado porque la relación devuelve 'clientes'
+        })) || []
+      );
     } catch (error: any) {
       console.error('Error al cargar recordatorios:', error.message);
       setSnackbar({ open: true, message: `Error al cargar recordatorios: ${error.message}`, severity: 'error' });
@@ -132,8 +184,8 @@ data?.map((item: Recordatorio) => ({
     setCurrentRecordatorio({ ...currentRecordatorio, [name]: value });
   };
 
-  const handleClienteChange = (event: SelectChangeEvent<number>) => {
-    setCurrentRecordatorio({ ...currentRecordatorio, cliente_id: event.target.value as number });
+  const handleClienteChange = (event: SelectChangeEvent<string>) => {
+    setCurrentRecordatorio({ ...currentRecordatorio, cliente_id: event.target.value as string });
   };
 
   const handleDateChange = (newDate: Date | null) => {
@@ -148,6 +200,11 @@ data?.map((item: Recordatorio) => ({
 
   const handleSaveRecordatorio = async () => {
     try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Usuario no autenticado');
+      }
+
       if (!currentRecordatorio.cliente_id || !currentRecordatorio.titulo || !currentRecordatorio.fecha) {
         setSnackbar({ open: true, message: 'Cliente, título y fecha son obligatorios', severity: 'error' });
         return;
@@ -177,6 +234,7 @@ data?.map((item: Recordatorio) => ({
               descripcion: currentRecordatorio.descripcion || '',
               fecha: currentRecordatorio.fecha,
               completado: false,
+              created_by: user.id,
             },
           ]);
 
@@ -415,11 +473,17 @@ data?.map((item: Recordatorio) => ({
               sx={{ bgcolor: theme.palette.background.paper }}
               aria-label="Seleccionar cliente"
             >
-              {clientes.map((cliente) => (
-                <MenuItem key={cliente.id} value={cliente.id}>
-                  {cliente.nombre}
+              {clientes.length > 0 ? (
+                clientes.map((cliente) => (
+                  <MenuItem key={cliente.id} value={cliente.id}>
+                    {cliente.nombre}
+                  </MenuItem>
+                ))
+              ) : (
+                <MenuItem disabled>
+                  <em>No hay clientes disponibles</em>
                 </MenuItem>
-              ))}
+              )}
             </Select>
           </FormControl>
           <TextField

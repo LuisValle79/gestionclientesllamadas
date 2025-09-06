@@ -25,6 +25,7 @@ import {
 } from '@mui/icons-material';
 import * as XLSX from 'xlsx';
 import { supabase } from '../services/supabase';
+import { useAuth } from '../context/AuthContext';
 
 type Cliente = {
   id: string;
@@ -39,10 +40,12 @@ type Cliente = {
   fecha_proxima_visita: string | null;
   fecha_proxima_reunion: string | null;
   created_at: string;
+  created_by: string | null;
 };
 
 const Clientes = () => {
   const theme = useTheme();
+  const { user } = useAuth();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
@@ -56,10 +59,37 @@ const Clientes = () => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [tabValue, setTabValue] = useState(0);
   const [filtro, setFiltro] = useState('todos');
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchClientes();
-  }, [filtro]);
+    if (user) {
+      fetchUserRole();
+    }
+  }, [user]);
+
+  const fetchUserRole = async () => {
+    try {
+      if (!user) throw new Error('Usuario no autenticado');
+      const { data, error } = await supabase
+        .from('perfiles_usuario')
+        .select('rol')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      setUserRole(data?.rol || null);
+    } catch (error: any) {
+      console.error('Error al obtener rol de usuario:', error.message);
+      setSnackbar({ open: true, message: `Error al obtener rol de usuario: ${error.message}`, severity: 'error' });
+      setUserRole(null); // Fallback to null to avoid blocking fetchClientes
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchClientes();
+    }
+  }, [filtro, user, userRole]);
 
   const fetchClientes = async () => {
     try {
@@ -67,6 +97,11 @@ const Clientes = () => {
       let query = supabase
         .from('clientes')
         .select('*');
+
+      // Filter by created_by for non-admin users
+      if (user && userRole !== 'administrador') {
+        query = query.eq('created_by', user.id);
+      }
 
       if (filtro === 'proxima_llamada') {
         query = query.not('fecha_proxima_llamada', 'is', null);
@@ -134,6 +169,11 @@ const Clientes = () => {
   };
 
   const handleSaveCliente = async () => {
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
+
     try {
       const clienteData = {
         id: isEditing ? currentCliente.id : crypto.randomUUID(),
@@ -147,13 +187,15 @@ const Clientes = () => {
         fecha_proxima_llamada: currentCliente.fecha_proxima_llamada || null,
         fecha_proxima_visita: currentCliente.fecha_proxima_visita || null,
         fecha_proxima_reunion: currentCliente.fecha_proxima_reunion || null,
+        created_by: user.id,
       };
 
       if (isEditing && currentCliente.id) {
         const { error } = await supabase
           .from('clientes')
           .update(clienteData)
-          .eq('id', currentCliente.id);
+          .eq('id', currentCliente.id)
+          .eq('created_by', user.id);
 
         if (error) throw error;
         setSnackbar({ open: true, message: 'Cliente actualizado correctamente', severity: 'success' });
@@ -177,6 +219,11 @@ const Clientes = () => {
   const handleImportClientes = async () => {
     if (!importFile) {
       setImportError('Por favor, selecciona un archivo Excel (.xls o .xlsx).');
+      return;
+    }
+
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
       return;
     }
 
@@ -234,6 +281,7 @@ const Clientes = () => {
           fecha_proxima_llamada: validateDate(rowData.fecha_proxima_llamada),
           fecha_proxima_visita: validateDate(rowData.fecha_proxima_visita),
           fecha_proxima_reunion: validateDate(rowData.fecha_proxima_reunion),
+          created_by: user.id,
         };
       });
 
@@ -266,12 +314,23 @@ const Clientes = () => {
   };
 
   const handleDeleteCliente = async (id: string) => {
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
+
     if (window.confirm('¿Estás seguro de que deseas eliminar este cliente?')) {
       try {
-        const { error } = await supabase
+        let query = supabase
           .from('clientes')
           .delete()
           .eq('id', id);
+
+        if (userRole !== 'administrador') {
+          query = query.eq('created_by', user.id);
+        }
+
+        const { error } = await query;
 
         if (error) throw error;
         setSnackbar({ open: true, message: 'Cliente eliminado correctamente', severity: 'success' });

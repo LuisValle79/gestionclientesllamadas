@@ -71,16 +71,22 @@ const Mensajes = () => {
   const fetchClientes = async () => {
     try {
       setLoading(true);
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Usuario no autenticado');
+      }
+
       const { data, error } = await supabase
         .from('clientes')
         .select('id, nombre, telefono, razon_social')
+        .eq('created_by', user.id) // Filtrar explícitamente por created_by
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      console.log('Clientes obtenidos:', data);
+      console.log('Clientes obtenidos para usuario', user.id, ':', data);
       setClientes(data || []);
       if (data?.length === 0) {
-        setSnackbar({ open: true, message: 'No se encontraron clientes en la base de datos', severity: 'warning' });
+        setSnackbar({ open: true, message: 'No se encontraron clientes para este usuario', severity: 'warning' });
       }
     } catch (error: any) {
       console.error('Error al cargar clientes:', error.message);
@@ -201,11 +207,17 @@ const Mensajes = () => {
 
   const handleAddCliente = async () => {
     try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Usuario no autenticado');
+      }
+
       const clienteData = {
         id: crypto.randomUUID(),
         nombre: nuevoClienteNombre.trim() || null,
         telefono: nuevoClienteTelefono.trim() || null,
         razon_social: nuevoClienteRazonSocial.trim() || null,
+        created_by: user.id, // Añadir created_by
       };
 
       const { error } = await supabase
