@@ -25,7 +25,7 @@ type Usuario = {
   rol: 'administrador' | 'asesor' | 'cliente';
   telefono: string | null;
   created_at: string;
-  password?: string; // Añadido para creación de usuarios
+  password?: string;
 };
 
 const Usuarios = () => {
@@ -63,57 +63,60 @@ const Usuarios = () => {
     }
   };
 
-const fetchUsuarios = async () => {
-  try {
-    setLoading(true);
-    const { data, error } = await supabase.rpc('get_usuarios_con_perfiles');
-    if (error) throw error;
-    setUsuarios(
-      data?.map((item: any) => ({
-        id: item.id,
-        email: item.email,
-        nombre: item.nombre || null,
-        apellido: item.apellido || null,
-        rol: item.rol as 'administrador' | 'asesor' | 'cliente',
-        telefono: item.telefono || null,
-        created_at: item.created_at,
-      })) || []
-    );
-  } catch (error: any) {
-    console.error('Error al cargar usuarios:', error);
-    setSnackbar({ open: true, message: `Error al cargar usuarios: ${error.message}`, severity: 'error' });
-  } finally {
-    setLoading(false);
-  }
-};
-
-  const handleOpenDialog = (usuario?: Usuario) => {
-    if (usuario) {
-      setCurrentUsuario(usuario);
-      setIsEditing(true);
-    } else {
-      setCurrentUsuario({
-        email: '',
-        nombre: '',
-        apellido: '',
-        rol: 'cliente',
-        telefono: '',
-        password: '', // Inicializar password para nuevos usuarios
-      });
-      setIsEditing(false);
+  const fetchUsuarios = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase.rpc('get_usuarios_con_perfiles');
+      if (error) throw error;
+      console.log('Usuarios obtenidos:', data); // Log para depuración
+      setUsuarios(
+        data?.map((item: any) => ({
+          id: item.id,
+          email: item.email,
+          nombre: item.nombre || null,
+          apellido: item.apellido || null,
+          rol: item.rol as 'administrador' | 'asesor' | 'cliente',
+          telefono: item.telefono || null,
+          created_at: item.created_at,
+        })) || []
+      );
+    } catch (error: any) {
+      console.error('Error al cargar usuarios:', error);
+      setSnackbar({ open: true, message: `Error al cargar usuarios: ${error.message}`, severity: 'error' });
+    } finally {
+      setLoading(false);
     }
-    setOpenDialog(true);
   };
 
+const handleOpenDialog = (usuario?: Usuario) => {
+  if (usuario) {
+    setCurrentUsuario({
+      ...usuario,
+      password: '', // Asegúrate de que password esté definido, aunque no se use en edición
+    });
+    setIsEditing(true);
+  } else {
+    setCurrentUsuario({
+      email: '',
+      nombre: null,
+      apellido: null,
+      rol: 'cliente',
+      telefono: null,
+      password: '', // Inicializa password como cadena vacía
+    });
+    setIsEditing(false);
+  }
+  setOpenDialog(true);
+};
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setCurrentUsuario({});
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setCurrentUsuario({ ...currentUsuario, [name]: value });
-  };
+const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const { name, value } = e.target;
+  setCurrentUsuario({ ...currentUsuario, [name]: value || '' }); // Cambia null a '' para password
+};
 
   const handleRoleChange = (event: SelectChangeEvent) => {
     setCurrentUsuario({
@@ -122,51 +125,102 @@ const fetchUsuarios = async () => {
     });
   };
 
-  const handleSaveUsuario = async () => {
-    try {
-      if (!currentUsuario.email || !currentUsuario.rol) {
-        setSnackbar({ open: true, message: 'Email y rol son obligatorios', severity: 'error' });
+const handleSaveUsuario = async () => {
+  try {
+    // Validar campos obligatorios
+    if (!currentUsuario.email || !currentUsuario.rol) {
+      setSnackbar({ open: true, message: 'Email y rol son obligatorios', severity: 'error' });
+      return;
+    }
+
+    // Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(currentUsuario.email)) {
+      setSnackbar({ open: true, message: 'Formato de email inválido', severity: 'error' });
+      return;
+    }
+
+    if (!isEditing) {
+      // Validar contraseña para nuevos usuarios
+      if (!currentUsuario.password || currentUsuario.password.length < 6) {
+        setSnackbar({
+          open: true,
+          message: 'La contraseña es obligatoria y debe tener al menos 6 caracteres',
+          severity: 'error',
+        });
         return;
       }
+    }
 
-      if (isEditing) {
-        const { error } = await supabase.rpc('actualizar_usuario', {
-          usuario_id: currentUsuario.id,
-          nuevo_nombre: currentUsuario.nombre,
-          nuevo_apellido: currentUsuario.apellido,
-          nuevo_rol: currentUsuario.rol,
-          nuevo_telefono: currentUsuario.telefono,
-        });
+    if (isEditing) {
+      // Actualizar usuario existente
+      const { error } = await supabase.rpc('actualizar_usuario', {
+        usuario_id: currentUsuario.id,
+        nuevo_nombre: currentUsuario.nombre || null,
+        nuevo_apellido: currentUsuario.apellido || null,
+        nuevo_rol: currentUsuario.rol,
+        nuevo_telefono: currentUsuario.telefono || null,
+      });
 
-        if (error) throw error;
-        setSnackbar({ open: true, message: 'Usuario actualizado correctamente', severity: 'success' });
-      } else {
-        if (!currentUsuario.password) {
-          setSnackbar({ open: true, message: 'La contraseña es obligatoria para nuevos usuarios', severity: 'error' });
-          return;
-        }
+      if (error) throw new Error(`Error al actualizar usuario: ${error.message}`);
+      setSnackbar({ open: true, message: 'Usuario actualizado correctamente', severity: 'success' });
+    } else {
+      // Registrar nuevo usuario
+      console.log('Datos enviados a signUp:', {
+        email: currentUsuario.email,
+        password: currentUsuario.password,
+      });
 
-        const { error } = await supabase.rpc('crear_usuario_con_rol', {
-          email: currentUsuario.email,
-          password: currentUsuario.password,
-          nombre: currentUsuario.nombre,
-          apellido: currentUsuario.apellido,
-          rol: currentUsuario.rol,
-          telefono: currentUsuario.telefono,
-        });
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: currentUsuario.email,
+        password: currentUsuario.password || '', // Fallback a cadena vacía (aunque la validación previa debería evitar esto)
+        options: {
+          data: {
+            nombre: currentUsuario.nombre || null,
+            apellido: currentUsuario.apellido || null,
+            telefono: currentUsuario.telefono || null,
+          },
+        },
+      });
 
-        if (error) throw error;
-        setSnackbar({ open: true, message: 'Usuario creado correctamente', severity: 'success' });
+      if (authError) {
+        console.error('Error en signUp:', authError);
+        throw new Error(authError.message);
       }
 
-      handleCloseDialog();
-      fetchUsuarios();
-    } catch (error: any) {
-      console.error('Error al guardar usuario:', error.message);
-      setSnackbar({ open: true, message: `Error al guardar usuario: ${error.message}`, severity: 'error' });
-    }
-  };
+      // Verificar que el usuario se creó
+      if (!authData.user) {
+        throw new Error('No se pudo crear el usuario');
+      }
 
+      // Registrar perfil en perfiles_usuario
+      const { error: rpcError } = await supabase.rpc('crear_usuario_con_rol', {
+        email: currentUsuario.email,
+        nombre: currentUsuario.nombre || null,
+        apellido: currentUsuario.apellido || null,
+        rol: currentUsuario.rol,
+        telefono: currentUsuario.telefono || null,
+      });
+
+      if (rpcError) {
+        console.error('Error en crear_usuario_con_rol:', rpcError);
+        throw new Error(`Error al crear perfil: ${rpcError.message}`);
+      }
+
+      setSnackbar({ open: true, message: 'Usuario creado correctamente', severity: 'success' });
+    }
+
+    handleCloseDialog();
+    fetchUsuarios();
+  } catch (error: any) {
+    console.error('Error al guardar usuario:', error);
+    setSnackbar({
+      open: true,
+      message: `Error al guardar usuario: ${error.message}`,
+      severity: 'error',
+    });
+  }
+};
   const handleDeleteUsuario = async (id: string) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
       try {
@@ -221,7 +275,6 @@ const fetchUsuarios = async () => {
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
-      {/* Encabezado */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: theme.spacing(3) }}>
         <Typography variant="h5" component="h1" sx={{ fontWeight: '600', color: theme.palette.text.primary }}>
           Gestión de Usuarios
@@ -238,7 +291,6 @@ const fetchUsuarios = async () => {
         </Button>
       </Box>
 
-      {/* Tabla */}
       <Paper sx={{ width: '100%', borderRadius: theme.shape.borderRadius, boxShadow: theme.shadows[2], overflow: 'hidden' }}>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
@@ -325,7 +377,6 @@ const fetchUsuarios = async () => {
         )}
       </Paper>
 
-      {/* Diálogo para agregar/editar usuario */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth sx={{ '& .MuiDialog-paper': { borderRadius: theme.shape.borderRadius, p: 2 } }}>
         <DialogTitle sx={{ fontWeight: '500' }}>{isEditing ? 'Editar Usuario' : 'Nuevo Usuario'}</DialogTitle>
         <DialogContent>
@@ -342,6 +393,7 @@ const fetchUsuarios = async () => {
             disabled={isEditing}
             sx={{ bgcolor: theme.palette.background.paper }}
             aria-label="Email del usuario"
+            required
           />
           {!isEditing && (
             <TextField
@@ -355,12 +407,13 @@ const fetchUsuarios = async () => {
               onChange={handleInputChange}
               sx={{ bgcolor: theme.palette.background.paper }}
               aria-label="Contraseña del usuario"
+              required
             />
           )}
           <TextField
             margin="normal"
             name="nombre"
-            label="Nombre"
+            label="Nombre (opcional)"
             fullWidth
             variant="outlined"
             value={currentUsuario.nombre || ''}
@@ -371,7 +424,7 @@ const fetchUsuarios = async () => {
           <TextField
             margin="normal"
             name="apellido"
-            label="Apellido"
+            label="Apellido (opcional)"
             fullWidth
             variant="outlined"
             value={currentUsuario.apellido || ''}
@@ -396,13 +449,14 @@ const fetchUsuarios = async () => {
           <TextField
             margin="normal"
             name="telefono"
-            label="Teléfono"
+            label="Teléfono (opcional)"
             fullWidth
             variant="outlined"
             value={currentUsuario.telefono || ''}
             onChange={handleInputChange}
             sx={{ bgcolor: theme.palette.background.paper }}
             aria-label="Teléfono del usuario"
+            helperText="Incluye el código de país (ej: +51987654321)"
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -421,7 +475,6 @@ const fetchUsuarios = async () => {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar para notificaciones */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}

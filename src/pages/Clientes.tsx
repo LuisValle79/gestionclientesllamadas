@@ -188,32 +188,27 @@ const Clientes = () => {
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
 
-      // Verificar que el archivo tenga datos
       if (jsonData.length < 2) {
         throw new Error('El archivo Excel está vacío o no tiene datos válidos.');
       }
 
-      // Obtener encabezados (primera fila)
       const headers = jsonData[0] as string[];
       const expectedHeaders = [
         'nombre', 'telefono', 'email', 'ruc', 'razon_social', 'representante',
         'notas', 'fecha_proxima_llamada', 'fecha_proxima_visita', 'fecha_proxima_reunion'
       ];
 
-      // Verificar que los encabezados sean correctos
       const headersMatch = expectedHeaders.every((header, index) => header === headers[index]?.toLowerCase());
       if (!headersMatch) {
         throw new Error('Los encabezados del archivo Excel no coinciden. Descarga el archivo de ejemplo para verificar el formato.');
       }
 
-      // Procesar las filas (excluyendo los encabezados)
       const clientesData: Partial<Cliente>[] = (jsonData.slice(1) as any[][]).map((row) => {
         const rowData = row.reduce((acc, value, i) => {
           acc[headers[i]] = value === undefined || value === '' ? null : value;
           return acc;
         }, {} as any);
 
-        // Validar formato de fechas
         const validateDate = (date: any) => {
           if (!date) return null;
           let parsedDate: Date;
@@ -242,7 +237,6 @@ const Clientes = () => {
         };
       });
 
-      // Dividir en lotes para evitar superar los límites de Supabase
       const batchSize = 100;
       for (let i = 0; i < clientesData.length; i += batchSize) {
         const batch = clientesData.slice(i, i + batchSize);
@@ -347,9 +341,15 @@ const Clientes = () => {
     switch (tabValue) {
       case 0: // Información general
         return (
-          <TableRow key={cliente.id}>
-            <TableCell>{cliente.nombre || '-'}</TableCell>
-            <TableCell>
+          <TableRow
+            key={cliente.id}
+            sx={{
+              '&:nth-of-type(odd)': { backgroundColor: theme.palette.background.default },
+              '&:hover': { backgroundColor: theme.palette.action.hover },
+            }}
+          >
+            <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{cliente.nombre || '-'}</TableCell>
+            <TableCell sx={{ py: 1.5 }}>
               {cliente.telefono ? (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Tooltip title="Llamar">
@@ -357,6 +357,7 @@ const Clientes = () => {
                       size="small"
                       color="primary"
                       onClick={() => handlePhoneCall(cliente.telefono)}
+                      sx={{ '&:hover': { bgcolor: theme.palette.primary.light, color: '#fff' } }}
                     >
                       <PhoneIcon fontSize="small" />
                     </IconButton>
@@ -366,6 +367,7 @@ const Clientes = () => {
                     onClick={() => handlePhoneCall(cliente.telefono)}
                     sx={{
                       cursor: 'pointer',
+                      fontSize: '0.9rem',
                       '&:hover': { textDecoration: 'underline', color: theme.palette.primary.main },
                     }}
                   >
@@ -374,7 +376,7 @@ const Clientes = () => {
                   <Tooltip title="Enviar WhatsApp">
                     <IconButton
                       size="small"
-                      color="success"
+                      sx={{ color: '#25D366', '&:hover': { bgcolor: '#25D366', color: '#fff' } }}
                       onClick={() => handleWhatsAppClick(cliente.telefono)}
                     >
                       <WhatsAppIcon fontSize="small" />
@@ -383,106 +385,130 @@ const Clientes = () => {
                 </Box>
               ) : '-'}
             </TableCell>
-            <TableCell>{cliente.email || '-'}</TableCell>
-            <TableCell>
+            <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{cliente.email || '-'}</TableCell>
+            <TableCell sx={{ py: 1.5 }}>
               {cliente.ruc && (
                 <Tooltip title="RUC">
                   <Chip
                     icon={<BusinessIcon />}
                     label={cliente.ruc}
                     size="small"
-                    sx={{ mr: 1, mb: 1 }}
+                    sx={{ bgcolor: theme.palette.grey[200], color: theme.palette.text.primary }}
                   />
                 </Tooltip>
               )}
             </TableCell>
-            <TableCell align="center">
-              {cliente.telefono && (
-                <IconButton
-                  color="primary"
-                  onClick={() => handleWhatsAppClick(cliente.telefono)}
-                  title="Enviar WhatsApp"
-                >
-                  <WhatsAppIcon />
-                </IconButton>
-              )}
-              <IconButton
-                color="primary"
-                onClick={() => handleOpenDialog(cliente)}
-                title="Editar"
-              >
-                <EditIcon />
-              </IconButton>
-              <IconButton
-                color="error"
-                onClick={() => handleDeleteCliente(cliente.id)}
-                title="Eliminar"
-              >
-                <DeleteIcon />
-              </IconButton>
+            <TableCell align="center" sx={{ py: 1.5 }}>
+              <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                {cliente.telefono && (
+                  <Tooltip title="Enviar WhatsApp">
+                    <IconButton
+                      color="inherit"
+                      sx={{ color: '#25D366', '&:hover': { bgcolor: '#25D366', color: '#fff' } }}
+                      onClick={() => handleWhatsAppClick(cliente.telefono)}
+                    >
+                      <WhatsAppIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+                <Tooltip title="Editar">
+                  <IconButton
+                    color="primary"
+                    onClick={() => handleOpenDialog(cliente)}
+                    sx={{ '&:hover': { bgcolor: theme.palette.primary.light, color: '#fff' } }}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Eliminar">
+                  <IconButton
+                    color="error"
+                    onClick={() => handleDeleteCliente(cliente.id)}
+                    sx={{ '&:hover': { bgcolor: theme.palette.error.light, color: '#fff' } }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
             </TableCell>
           </TableRow>
         );
       case 1: // Información empresarial
         return (
-          <TableRow key={cliente.id}>
-            <TableCell>{cliente.nombre || '-'}</TableCell>
-            <TableCell>{cliente.razon_social || '-'}</TableCell>
-            <TableCell>{cliente.representante || '-'}</TableCell>
-            <TableCell>{cliente.ruc || '-'}</TableCell>
-            <TableCell align="center">
-              <IconButton
-                color="primary"
-                onClick={() => handleOpenDialog(cliente)}
-                title="Editar"
-              >
-                <EditIcon />
-              </IconButton>
+          <TableRow
+            key={cliente.id}
+            sx={{
+              '&:nth-of-type(odd)': { backgroundColor: theme.palette.background.default },
+              '&:hover': { backgroundColor: theme.palette.action.hover },
+            }}
+          >
+            <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{cliente.nombre || '-'}</TableCell>
+            <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{cliente.razon_social || '-'}</TableCell>
+            <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{cliente.representante || '-'}</TableCell>
+            <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{cliente.ruc || '-'}</TableCell>
+            <TableCell align="center" sx={{ py: 1.5 }}>
+              <Tooltip title="Editar">
+                <IconButton
+                  color="primary"
+                  onClick={() => handleOpenDialog(cliente)}
+                  sx={{ '&:hover': { bgcolor: theme.palette.primary.light, color: '#fff' } }}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
             </TableCell>
           </TableRow>
         );
       case 2: // Programación
         return (
-          <TableRow key={cliente.id}>
-            <TableCell>{cliente.nombre || '-'}</TableCell>
-            <TableCell>
+          <TableRow
+            key={cliente.id}
+            sx={{
+              '&:nth-of-type(odd)': { backgroundColor: theme.palette.background.default },
+              '&:hover': { backgroundColor: theme.palette.action.hover },
+            }}
+          >
+            <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{cliente.nombre || '-'}</TableCell>
+            <TableCell sx={{ py: 1.5 }}>
               {cliente.fecha_proxima_llamada ? (
                 <Chip
                   icon={<PhoneIcon />}
                   label={formatDate(cliente.fecha_proxima_llamada)}
                   color={isDatePast(cliente.fecha_proxima_llamada) ? 'error' : isDateSoon(cliente.fecha_proxima_llamada) ? 'warning' : 'default'}
-                  sx={{ mb: 1 }}
+                  sx={{ bgcolor: isDatePast(cliente.fecha_proxima_llamada) ? theme.palette.error.light : isDateSoon(cliente.fecha_proxima_llamada) ? theme.palette.warning.light : theme.palette.grey[200] }}
                 />
               ) : '-'}
             </TableCell>
-            <TableCell>
+            <TableCell sx={{ py: 1.5 }}>
               {cliente.fecha_proxima_visita ? (
                 <Chip
                   icon={<EventIcon />}
                   label={formatDate(cliente.fecha_proxima_visita)}
                   color={isDatePast(cliente.fecha_proxima_visita) ? 'error' : isDateSoon(cliente.fecha_proxima_visita) ? 'warning' : 'default'}
-                  sx={{ mb: 1 }}
+                  sx={{ bgcolor: isDatePast(cliente.fecha_proxima_visita) ? theme.palette.error.light : isDateSoon(cliente.fecha_proxima_visita) ? theme.palette.warning.light : theme.palette.grey[200] }}
                 />
               ) : '-'}
             </TableCell>
-            <TableCell>
+            <TableCell sx={{ py: 1.5 }}>
               {cliente.fecha_proxima_reunion ? (
                 <Chip
                   icon={<CalendarIcon />}
                   label={formatDate(cliente.fecha_proxima_reunion)}
                   color={isDatePast(cliente.fecha_proxima_reunion) ? 'error' : isDateSoon(cliente.fecha_proxima_reunion) ? 'warning' : 'default'}
-                  sx={{ mb: 1 }}
+                  sx={{ bgcolor: isDatePast(cliente.fecha_proxima_reunion) ? theme.palette.error.light : isDateSoon(cliente.fecha_proxima_reunion) ? theme.palette.warning.light : theme.palette.grey[200] }}
                 />
               ) : '-'}
             </TableCell>
-            <TableCell align="center">
-              <IconButton
-                color="primary"
-                onClick={() => handleOpenDialog(cliente)}
-                title="Editar"
-              >
-                <EditIcon />
-              </IconButton>
+            <TableCell align="center" sx={{ py: 1.5 }}>
+              <Tooltip title="Editar">
+                <IconButton
+                  color="primary"
+                  onClick={() => handleOpenDialog(cliente)}
+                  sx={{ '&:hover': { bgcolor: theme.palette.primary.light, color: '#fff' } }}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
             </TableCell>
           </TableRow>
         );
@@ -496,31 +522,31 @@ const Clientes = () => {
       case 0: // Información general
         return (
           <TableRow>
-            <TableCell>Nombre</TableCell>
-            <TableCell>Teléfono</TableCell>
-            <TableCell>Email</TableCell>
-            <TableCell>RUC</TableCell>
-            <TableCell align="center">Acciones</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Nombre</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Teléfono</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Email</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>RUC</TableCell>
+            <TableCell align="center" sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Acciones</TableCell>
           </TableRow>
         );
       case 1: // Información empresarial
         return (
           <TableRow>
-            <TableCell>Nombre</TableCell>
-            <TableCell>Razón Social</TableCell>
-            <TableCell>Representante</TableCell>
-            <TableCell>RUC</TableCell>
-            <TableCell align="center">Acciones</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Nombre</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Razón Social</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Representante</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>RUC</TableCell>
+            <TableCell align="center" sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Acciones</TableCell>
           </TableRow>
         );
       case 2: // Programación
         return (
           <TableRow>
-            <TableCell>Nombre</TableCell>
-            <TableCell>Próxima Llamada</TableCell>
-            <TableCell>Próxima Visita</TableCell>
-            <TableCell>Próxima Reunión</TableCell>
-            <TableCell align="center">Acciones</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Nombre</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Próxima Llamada</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Próxima Visita</TableCell>
+            <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Próxima Reunión</TableCell>
+            <TableCell align="center" sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100] }}>Acciones</TableCell>
           </TableRow>
         );
       default:
@@ -529,17 +555,40 @@ const Clientes = () => {
   };
 
   return (
-    <Box sx={{ width: '100%', maxWidth: '100%', mt: 4, mb: 4, p: 2 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, gap: 2, flexWrap: 'wrap' }}>
-        <Typography variant="h4" component="h1">
+    <Box
+      sx={{
+        width: '100%',
+        maxWidth: '100%',
+        p: { xs: 2, sm: 3, md: 4 },
+        bgcolor: theme.palette.background.paper,
+        borderRadius: 2,
+        boxShadow: theme.shadows[3],
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 3,
+          gap: 2,
+          flexWrap: 'wrap',
+        }}
+      >
+        <Typography
+          variant="h4"
+          component="h1"
+          sx={{ fontWeight: 700, color: theme.palette.text.primary }}
+        >
           Gestión de Clientes
         </Typography>
-        <Box sx={{ display: 'flex', gap: 2 }}>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
           <Button
             variant="contained"
             color="primary"
             startIcon={<AddIcon />}
             onClick={() => handleOpenDialog()}
+            sx={{ borderRadius: 2, px: 3, py: 1 }}
           >
             Nuevo Cliente
           </Button>
@@ -548,21 +597,44 @@ const Clientes = () => {
             color="secondary"
             startIcon={<UploadIcon />}
             onClick={handleOpenImportDialog}
+            sx={{ borderRadius: 2, px: 3, py: 1 }}
           >
             Importar Clientes
           </Button>
         </Box>
       </Box>
 
-      <Box sx={{ mb: 3 }}>
-        <Tabs value={tabValue} onChange={handleTabChange} aria-label="client tabs" sx={{ mb: 2 }}>
+      <Box sx={{ mb: 2 }}>
+        <Tabs
+          value={tabValue}
+          onChange={handleTabChange}
+          aria-label="client tabs"
+          sx={{
+            mb: 2,
+            '& .MuiTab-root': {
+              textTransform: 'none',
+              fontWeight: 500,
+              fontSize: '1rem',
+              color: theme.palette.text.secondary,
+            },
+            '& .Mui-selected': {
+              color: theme.palette.primary.main,
+            },
+            '& .MuiTabs-indicator': {
+              backgroundColor: theme.palette.primary.main,
+            },
+          }}
+        >
           <Tab label="Información General" />
           <Tab label="Información Empresarial" />
           <Tab label="Programación" />
         </Tabs>
 
         {tabValue === 2 && (
-          <FormControl variant="outlined" sx={{ minWidth: 200, mb: 2 }}>
+          <FormControl
+            variant="outlined"
+            sx={{ minWidth: { xs: '100%', sm: 200 }, mb: 2 }}
+          >
             <InputLabel id="filtro-select-label">Filtrar por</InputLabel>
             <Select
               labelId="filtro-select-label"
@@ -570,6 +642,7 @@ const Clientes = () => {
               value={filtro}
               onChange={handleFiltroChange}
               label="Filtrar por"
+              sx={{ borderRadius: 2 }}
             >
               <MenuItem value="todos">Todos los clientes</MenuItem>
               <MenuItem value="proxima_llamada">Con próxima llamada</MenuItem>
@@ -581,12 +654,28 @@ const Clientes = () => {
       </Box>
 
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-          <CircularProgress />
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            p: 4,
+            bgcolor: theme.palette.background.default,
+            borderRadius: 2,
+          }}
+        >
+          <CircularProgress size={32} />
         </Box>
       ) : (
-        <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-          <TableContainer>
+        <Paper
+          sx={{
+            width: '100%',
+            overflow: 'hidden',
+            borderRadius: 2,
+            boxShadow: theme.shadows[3],
+          }}
+        >
+          <TableContainer sx={{ maxWidth: '100%', overflowX: 'auto' }}>
             <Table stickyHeader>
               <TableHead>
                 {getTableHeaders()}
@@ -597,7 +686,7 @@ const Clientes = () => {
                   .map((cliente) => renderClienteInfo(cliente))}
                 {clientes.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} align="center">
+                    <TableCell colSpan={5} align="center" sx={{ py: 4, fontSize: '1rem', color: theme.palette.text.secondary }}>
                       No hay clientes registrados
                     </TableCell>
                   </TableRow>
@@ -614,16 +703,43 @@ const Clientes = () => {
             onPageChange={handleChangePage}
             onRowsPerPageChange={handleChangeRowsPerPage}
             labelRowsPerPage="Filas por página:"
+            sx={{ borderTop: `1px solid ${theme.palette.divider}` }}
           />
         </Paper>
       )}
 
       {/* Diálogo para agregar/editar cliente */}
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
-        <DialogTitle>{isEditing ? 'Editar Cliente' : 'Nuevo Cliente'}</DialogTitle>
+      <Dialog
+        open={openDialog}
+        onClose={handleCloseDialog}
+        maxWidth="md"
+        fullWidth
+        sx={{ '& .MuiDialog-paper': { borderRadius: 2, p: 2 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 600, fontSize: '1.25rem' }}>
+          {isEditing ? 'Editar Cliente' : 'Nuevo Cliente'}
+        </DialogTitle>
         <DialogContent>
           <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={es}>
-            <Tabs value={tabValue} onChange={handleTabChange} aria-label="client form tabs" sx={{ mb: 2 }}>
+            <Tabs
+              value={tabValue}
+              onChange={handleTabChange}
+              aria-label="client form tabs"
+              sx={{
+                mb: 2,
+                '& .MuiTab-root': {
+                  textTransform: 'none',
+                  fontWeight: 500,
+                  fontSize: '1rem',
+                },
+                '& .Mui-selected': {
+                  color: theme.palette.primary.main,
+                },
+                '& .MuiTabs-indicator': {
+                  backgroundColor: theme.palette.primary.main,
+                },
+              }}
+            >
               <Tab label="Información General" />
               <Tab label="Información Empresarial" />
               <Tab label="Programación" />
@@ -642,6 +758,7 @@ const Clientes = () => {
                     variant="outlined"
                     value={currentCliente.nombre || ''}
                     onChange={handleInputChange}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
@@ -655,6 +772,7 @@ const Clientes = () => {
                     value={currentCliente.telefono || ''}
                     onChange={handleInputChange}
                     helperText="Incluye el código de país (ej: +51987654321)"
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12 }}>
@@ -667,6 +785,7 @@ const Clientes = () => {
                     variant="outlined"
                     value={currentCliente.email || ''}
                     onChange={handleInputChange}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12 }}>
@@ -680,6 +799,7 @@ const Clientes = () => {
                     variant="outlined"
                     value={currentCliente.notas || ''}
                     onChange={handleInputChange}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
               </Grid>
@@ -697,6 +817,7 @@ const Clientes = () => {
                     variant="outlined"
                     value={currentCliente.ruc || ''}
                     onChange={handleInputChange}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
@@ -709,6 +830,7 @@ const Clientes = () => {
                     variant="outlined"
                     value={currentCliente.razon_social || ''}
                     onChange={handleInputChange}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
@@ -721,6 +843,7 @@ const Clientes = () => {
                     variant="outlined"
                     value={currentCliente.representante || ''}
                     onChange={handleInputChange}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
               </Grid>
@@ -729,60 +852,80 @@ const Clientes = () => {
             {tabValue === 2 && (
               <Grid container spacing={2}>
                 <Grid size={{ xs: 12, sm: 4 }}>
-                  <Typography variant="subtitle2" gutterBottom>
+                  <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 500 }}>
                     Próxima Llamada
                   </Typography>
                   <DateTimePicker
                     label="Fecha y hora"
                     value={currentCliente.fecha_proxima_llamada ? new Date(currentCliente.fecha_proxima_llamada) : null}
                     onChange={(newDate) => handleDateChange('fecha_proxima_llamada', newDate)}
-                    sx={{ width: '100%' }}
+                    sx={{ width: '100%', '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 4 }}>
-                  <Typography variant="subtitle2" gutterBottom>
+                  <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 500 }}>
                     Próxima Visita
                   </Typography>
                   <DateTimePicker
                     label="Fecha y hora"
                     value={currentCliente.fecha_proxima_visita ? new Date(currentCliente.fecha_proxima_visita) : null}
                     onChange={(newDate) => handleDateChange('fecha_proxima_visita', newDate)}
-                    sx={{ width: '100%' }}
+                    sx={{ width: '100%', '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 4 }}>
-                  <Typography variant="subtitle2" gutterBottom>
+                  <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 500 }}>
                     Próxima Reunión
                   </Typography>
                   <DateTimePicker
                     label="Fecha y hora"
                     value={currentCliente.fecha_proxima_reunion ? new Date(currentCliente.fecha_proxima_reunion) : null}
                     onChange={(newDate) => handleDateChange('fecha_proxima_reunion', newDate)}
-                    sx={{ width: '100%' }}
+                    sx={{ width: '100%', '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Grid>
               </Grid>
             )}
           </LocalizationProvider>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancelar</Button>
-          <Button onClick={handleSaveCliente} variant="contained" color="primary">
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleCloseDialog}
+            variant="outlined"
+            color="inherit"
+            sx={{ borderRadius: 2 }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSaveCliente}
+            variant="contained"
+            color="primary"
+            sx={{ borderRadius: 2, px: 3 }}
+          >
             Guardar
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Diálogo para importación masiva */}
-      <Dialog open={openImportDialog} onClose={handleCloseImportDialog} maxWidth="md" fullWidth>
-        <DialogTitle>Importar Clientes desde Excel</DialogTitle>
+      <Dialog
+        open={openImportDialog}
+        onClose={handleCloseImportDialog}
+        maxWidth="md"
+        fullWidth
+        sx={{ '& .MuiDialog-paper': { borderRadius: 2, p: 2 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 600, fontSize: '1.25rem' }}>
+          Importar Clientes desde Excel
+        </DialogTitle>
         <DialogContent>
           <Box sx={{ mb: 2 }}>
-            <Typography variant="body1" gutterBottom>
+            <Typography variant="body1" gutterBottom sx={{ fontWeight: 500 }}>
               Sube un archivo Excel (.xls o .xlsx) con los datos de los clientes. La primera hoja debe tener las siguientes columnas:
             </Typography>
-            <Typography variant="body2" component="div">
-              <ul>
+            <Typography variant="body2" component="div" sx={{ pl: 2, color: theme.palette.text.secondary }}>
+              <ul style={{ paddingLeft: '20px' }}>
                 <li><strong>nombre</strong>: Nombre del cliente (opcional)</li>
                 <li><strong>telefono</strong>: Teléfono con código de país, ej: +51987654321 (opcional)</li>
                 <li><strong>email</strong>: Correo electrónico (opcional)</li>
@@ -796,7 +939,15 @@ const Clientes = () => {
               </ul>
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Descarga un <Link href="#" onClick={() => downloadSampleExcel()}>archivo Excel de ejemplo</Link> para guiarte.
+              Descarga un{' '}
+              <Link
+                href="#"
+                onClick={() => downloadSampleExcel()}
+                sx={{ color: theme.palette.primary.main, '&:hover': { textDecoration: 'underline' } }}
+              >
+                archivo Excel de ejemplo
+              </Link>{' '}
+              para guiarte.
               <br />
               <strong>Nota:</strong> Usa la primera hoja del archivo Excel. Asegúrate de que los encabezados coincidan exactamente con los indicados. Todos los campos son opcionales.
             </Typography>
@@ -806,26 +957,34 @@ const Clientes = () => {
             inputProps={{ accept: '.xls,.xlsx' }}
             onChange={handleFileChange}
             fullWidth
-            sx={{ mb: 2 }}
+            sx={{ mb: 2, borderRadius: 2 }}
           />
           {importError && (
-            <Alert severity="error" sx={{ mb: 2 }}>
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
               {importError}
             </Alert>
           )}
           {loading && (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-              <CircularProgress />
+              <CircularProgress size={32} />
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseImportDialog}>Cancelar</Button>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleCloseImportDialog}
+            variant="outlined"
+            color="inherit"
+            sx={{ borderRadius: 2 }}
+          >
+            Cancelar
+          </Button>
           <Button
             onClick={handleImportClientes}
             variant="contained"
             color="primary"
             disabled={!importFile || loading}
+            sx={{ borderRadius: 2, px: 3 }}
           >
             Importar
           </Button>
@@ -841,7 +1000,7 @@ const Clientes = () => {
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
-          sx={{ width: '100%' }}
+          sx={{ width: '100%', borderRadius: 2 }}
         >
           {snackbar.message}
         </Alert>
@@ -907,7 +1066,6 @@ const downloadSampleExcel = () => {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Clientes');
 
-  // Ajustar el ancho de las columnas para mejor legibilidad
   worksheet['!cols'] = [
     { wch: 20 }, // nombre
     { wch: 15 }, // telefono

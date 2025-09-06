@@ -3,16 +3,21 @@ import {
   Container, Typography, Paper, Box, Button, TextField, Dialog, DialogActions,
   DialogContent, DialogTitle, Snackbar, Alert, List, ListItem,
   ListItemText, ListItemAvatar, Avatar, Divider, FormControl, InputLabel, Select,
-  MenuItem, IconButton, Skeleton, InputAdornment, Fade,
+  MenuItem, IconButton, Skeleton, InputAdornment, Fade, type TextFieldProps,
 } from '@mui/material';
-import { Send as SendIcon, PersonAdd as PersonAddIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import { Send as SendIcon, PersonAdd as PersonAddIcon, Delete as DeleteIcon, Schedule as ScheduleIcon } from '@mui/icons-material';
 import type { SelectChangeEvent } from '@mui/material';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { es } from 'date-fns/locale';
 import { supabase } from '../services/supabase';
 
 type Cliente = {
   id: string;
   nombre: string | null;
   telefono: string | null;
+  razon_social: string | null; // Added for company name
 };
 
 type Mensaje = {
@@ -31,9 +36,12 @@ const Mensajes = () => {
   const [nuevoMensaje, setNuevoMensaje] = useState('');
   const [nuevoClienteNombre, setNuevoClienteNombre] = useState('');
   const [nuevoClienteTelefono, setNuevoClienteTelefono] = useState('');
+  const [nuevoClienteRazonSocial, setNuevoClienteRazonSocial] = useState('');
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [openDeleteDialog, setOpenDeleteDialog] = useState<string | null>(null);
+  const [openScheduleDialog, setOpenScheduleDialog] = useState(false);
+  const [scheduledDate, setScheduledDate] = useState<Date | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' });
 
   useEffect(() => {
@@ -50,23 +58,21 @@ const Mensajes = () => {
     }
   }, [selectedCliente]);
 
-  // Validar si un string es un UUID válido
   const isValidUUID = (str: string): boolean => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     return uuidRegex.test(str);
   };
 
-  // Fetch clients from Supabase
   const fetchClientes = async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('clientes')
-        .select('id, nombre, telefono')
-        .order('created_at', { ascending: false }); // Cambiado a created_at para reflejar posibles nuevos clientes
+        .select('id, nombre, telefono, razon_social')
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-      console.log('Clientes obtenidos:', data); // Log para depuración
+      console.log('Clientes obtenidos:', data);
       setClientes(data || []);
       if (data?.length === 0) {
         setSnackbar({ open: true, message: 'No se encontraron clientes en la base de datos', severity: 'warning' });
@@ -79,7 +85,6 @@ const Mensajes = () => {
     }
   };
 
-  // Fetch messages for a specific client
   const fetchMensajes = async (clienteId: string) => {
     try {
       setLoading(true);
@@ -91,7 +96,7 @@ const Mensajes = () => {
           contenido,
           tipo,
           created_at,
-          clientes!mensajes_cliente_id_fkey (id, nombre, telefono)
+          clientes!mensajes_cliente_id_fkey (id, nombre, telefono, razon_social)
         `)
         .eq('cliente_id', clienteId)
         .order('created_at', { ascending: true });
@@ -105,7 +110,7 @@ const Mensajes = () => {
         created_at: item.created_at,
         cliente: item.clientes && item.clientes.length > 0 ? item.clientes[0] : undefined,
       })) || [];
-      console.log('Mensajes obtenidos para cliente_id:', clienteId, mensajesMapped); // Log para depuración
+      console.log('Mensajes obtenidos para cliente_id:', clienteId, mensajesMapped);
       setMensajes(mensajesMapped);
     } catch (error: any) {
       console.error('Error al cargar mensajes:', error.message);
@@ -115,29 +120,28 @@ const Mensajes = () => {
     }
   };
 
-  // Handle client selection
   const handleClienteChange = (event: SelectChangeEvent<string>) => {
     const value = event.target.value;
-    console.log('Selected cliente:', value); // Log para depuración
+    console.log('Selected cliente:', value);
     setSelectedCliente(value);
+    setNuevoMensaje(''); // Clear message when changing client
   };
 
-  // Open/close dialogs
   const handleOpenDialog = () => setOpenDialog(true);
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setNuevoClienteNombre('');
     setNuevoClienteTelefono('');
+    setNuevoClienteRazonSocial('');
   };
 
-  // Add new client
   const handleAddCliente = async () => {
-    // Permitir agregar clientes incluso sin nombre o teléfono
     try {
       const clienteData = {
         id: crypto.randomUUID(),
         nombre: nuevoClienteNombre.trim() || null,
         telefono: nuevoClienteTelefono.trim() || null,
+        razon_social: nuevoClienteRazonSocial.trim() || null,
       };
 
       const { error } = await supabase
@@ -154,7 +158,30 @@ const Mensajes = () => {
     }
   };
 
-  // Send message via WhatsApp
+  const handleGeneratePersonalizedMessage = () => {
+    if (!selectedCliente || !isValidUUID(selectedCliente)) {
+      setSnackbar({ open: true, message: 'Selecciona un cliente válido', severity: 'error' });
+      return;
+    }
+
+    const cliente = clientes.find((c) => c.id === selectedCliente);
+    if (!cliente || !cliente.nombre) {
+      setSnackbar({ open: true, message: 'El cliente seleccionado no tiene nombre registrado', severity: 'error' });
+      return;
+    }
+
+    const nombre = cliente.nombre;
+    const razonSocial = cliente.razon_social || 'su empresa';
+    const personalizedMessage = `Hola, señor ${nombre}. 👋
+Soy Luis Valle, representante comercial de EXCELSIUS, una empresa conformada por ingenieros full stack especializados en el desarrollo de software para distintos sectores de negocio.
+
+En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, reducir costos, aumentar productividad, mejorar la toma de decisiones y crecer a través de soluciones tecnológicas personalizadas: desde sistemas ERP que integran procesos completos, hasta desarrollo de software a medida, aplicaciones móviles, inteligencia de negocios con Power BI y soluciones de e-commerce.
+
+📅 Me gustaría coordinar una reunión breve para conocer sus necesidades específicas y mostrarle cómo podemos apoyarlos a potenciar la competitividad de ${razonSocial} con soluciones digitales a su medida.`;
+
+    setNuevoMensaje(personalizedMessage);
+  };
+
   const handleEnviarMensaje = async () => {
     if (!selectedCliente || !isValidUUID(selectedCliente) || !nuevoMensaje.trim()) {
       setSnackbar({ open: true, message: 'Selecciona un cliente válido y escribe un mensaje', severity: 'error' });
@@ -191,7 +218,35 @@ const Mensajes = () => {
     }
   };
 
-  // Register received message
+  const handleScheduleMessage = async () => {
+    if (!selectedCliente || !isValidUUID(selectedCliente) || !nuevoMensaje.trim() || !scheduledDate) {
+      setSnackbar({ open: true, message: 'Selecciona un cliente, escribe un mensaje y selecciona una fecha/hora', severity: 'error' });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('scheduled_messages')
+        .insert([
+          {
+            cliente_id: selectedCliente,
+            contenido: nuevoMensaje,
+            scheduled_at: scheduledDate.toISOString(),
+          },
+        ]);
+
+      if (error) throw error;
+
+      setNuevoMensaje('');
+      setScheduledDate(null);
+      setOpenScheduleDialog(false);
+      setSnackbar({ open: true, message: 'Mensaje programado correctamente', severity: 'success' });
+    } catch (error: any) {
+      console.error('Error al programar mensaje:', error.message);
+      setSnackbar({ open: true, message: `Error al programar mensaje: ${error.message}`, severity: 'error' });
+    }
+  };
+
   const handleRegistrarMensajeRecibido = async () => {
     if (!selectedCliente || !isValidUUID(selectedCliente) || !nuevoMensaje.trim()) {
       setSnackbar({ open: true, message: 'Selecciona un cliente válido y escribe el mensaje recibido', severity: 'error' });
@@ -220,7 +275,6 @@ const Mensajes = () => {
     }
   };
 
-  // Delete message
   const handleDeleteMensaje = async (id: string) => {
     try {
       const { error } = await supabase
@@ -239,7 +293,6 @@ const Mensajes = () => {
     }
   };
 
-  // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return new Intl.DateTimeFormat('es-ES', {
@@ -251,7 +304,6 @@ const Mensajes = () => {
     }).format(date);
   };
 
-  // Render client name for display
   const getClienteDisplayName = (cliente: Cliente) => {
     if (cliente.nombre && cliente.telefono) {
       return `${cliente.nombre} (${cliente.telefono})`;
@@ -272,7 +324,6 @@ const Mensajes = () => {
         mb: 4,
         bgcolor: 'background.default',
         backgroundImage: 'linear-gradient(135deg, rgba(33, 150, 243, 0.05), rgba(0, 150, 136, 0.05))',
-        borderRadius: 2,
         p: 3,
       }}
     >
@@ -298,7 +349,6 @@ const Mensajes = () => {
             aria-label="Seleccionar cliente"
             sx={{
               bgcolor: 'background.paper',
-              borderRadius: 1,
               '& .MuiSelect-select': { py: 1.5 },
             }}
           >
@@ -329,20 +379,20 @@ const Mensajes = () => {
         <>
           {/* Message List */}
           <Paper
-            elevation={3}
             sx={{
               p: 3,
               maxHeight: '50vh',
               overflow: 'auto',
               bgcolor: 'background.paper',
-              borderRadius: 2,
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+              boxShadow: '0 1px 5px rgba(0, 0, 0, 0.08)',
+              transition: 'box-shadow 0.2s ease-in-out',
+              '&:hover': { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)' },
             }}
           >
             {loading ? (
               <Box sx={{ p: 2 }}>
                 {[...Array(3)].map((_, index) => (
-                  <Skeleton key={index} variant="rectangular" height={80} sx={{ mb: 2, borderRadius: 2 }} />
+                  <Skeleton key={index} variant="rectangular" height={80} sx={{ mb: 2 }} />
                 ))}
               </Box>
             ) : mensajes.length > 0 ? (
@@ -384,7 +434,6 @@ const Mensajes = () => {
                           sx={{
                             bgcolor: mensaje.tipo === 'enviado' ? 'primary.light' : 'grey.200',
                             p: 2,
-                            borderRadius: 2,
                             boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
                             transition: 'transform 0.2s ease',
                             '&:hover': { transform: 'scale(1.02)' },
@@ -409,10 +458,16 @@ const Mensajes = () => {
 
           {/* Message Input */}
           <Paper
-            elevation={3}
-            sx={{ p: 3, mt: 3, bgcolor: 'background.paper', borderRadius: 2, boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)' }}
+            sx={{
+              p: 3,
+              mt: 3,
+              bgcolor: 'background.paper',
+              boxShadow: '0 1px 5px rgba(0, 0, 0, 0.08)',
+              transition: 'box-shadow 0.2s ease-in-out',
+              '&:hover': { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)' },
+            }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
               <TextField
                 fullWidth
                 label="Escribe un mensaje"
@@ -422,7 +477,7 @@ const Mensajes = () => {
                 value={nuevoMensaje}
                 onChange={(e) => setNuevoMensaje(e.target.value)}
                 aria-label="Escribe un mensaje"
-                sx={{ bgcolor: 'background.paper', borderRadius: 1 }}
+                sx={{ bgcolor: 'background.paper' }}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
@@ -443,11 +498,10 @@ const Mensajes = () => {
                   disabled={!nuevoMensaje.trim() || !isValidUUID(selectedCliente)}
                   aria-label="Enviar mensaje"
                   sx={{
-                    borderRadius: 1,
                     textTransform: 'none',
                     fontWeight: 600,
                     bgcolor: 'primary.main',
-                    '&:hover': { bgcolor: 'primary.dark' },
+                    '&:hover': { bgcolor: 'primary.dark', transform: 'translateY(-1px)' },
                   }}
                 >
                   Enviar
@@ -458,9 +512,35 @@ const Mensajes = () => {
                   onClick={handleRegistrarMensajeRecibido}
                   disabled={!nuevoMensaje.trim() || !isValidUUID(selectedCliente)}
                   aria-label="Registrar mensaje recibido"
-                  sx={{ borderRadius: 1, textTransform: 'none', fontWeight: 600 }}
+                  sx={{ textTransform: 'none', fontWeight: 600 }}
                 >
                   Registrar Recibido
+                </Button>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handleGeneratePersonalizedMessage}
+                  disabled={!isValidUUID(selectedCliente)}
+                  aria-label="Ingresar mensaje personalizado"
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    bgcolor: 'primary.dark',
+                    '&:hover': { bgcolor: 'primary.main', transform: 'translateY(-1px)' },
+                  }}
+                >
+                  Mensaje Personalizado
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  startIcon={<ScheduleIcon />}
+                  onClick={() => setOpenScheduleDialog(true)}
+                  disabled={!nuevoMensaje.trim() || !isValidUUID(selectedCliente)}
+                  aria-label="Programar mensaje"
+                  sx={{ textTransform: 'none', fontWeight: 600 }}
+                >
+                  Programar
                 </Button>
               </Box>
             </Box>
@@ -468,13 +548,13 @@ const Mensajes = () => {
         </>
       ) : (
         <Paper
-          elevation={3}
           sx={{
             p: 4,
             textAlign: 'center',
             bgcolor: 'background.paper',
-            borderRadius: 2,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+            boxShadow: '0 1px 5px rgba(0, 0, 0, 0.08)',
+            transition: 'box-shadow 0.2s ease-in-out',
+            '&:hover': { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)' },
           }}
         >
           <Typography variant="h6" color="text.secondary" gutterBottom>
@@ -485,7 +565,7 @@ const Mensajes = () => {
             color="primary"
             startIcon={<PersonAddIcon />}
             onClick={handleOpenDialog}
-            sx={{ mt: 2, borderRadius: 1, textTransform: 'none', fontWeight: 600 }}
+            sx={{ mt: 2, textTransform: 'none', fontWeight: 600 }}
             aria-label="Agregar nuevo cliente"
           >
             Agregar Nuevo Cliente
@@ -497,7 +577,7 @@ const Mensajes = () => {
       <Dialog
         open={openDialog}
         onClose={handleCloseDialog}
-        PaperProps={{ sx: { borderRadius: 2, p: 2 } }}
+        PaperProps={{ sx: { p: 2 } }}
         TransitionComponent={Fade}
       >
         <DialogTitle sx={{ fontWeight: 700, color: 'primary.main' }}>Agregar Nuevo Cliente</DialogTitle>
@@ -520,6 +600,14 @@ const Mensajes = () => {
             inputProps={{ pattern: '[0-9]*' }}
             helperText="Incluye el código de país (ej: +51987654321)"
           />
+          <TextField
+            fullWidth
+            label="Razón Social (opcional)"
+            value={nuevoClienteRazonSocial}
+            onChange={(e) => setNuevoClienteRazonSocial(e.target.value)}
+            sx={{ mt: 2 }}
+            aria-label="Razón social del cliente"
+          />
         </DialogContent>
         <DialogActions>
           <Button
@@ -535,9 +623,56 @@ const Mensajes = () => {
             variant="contained"
             color="primary"
             aria-label="Agregar cliente"
-            sx={{ borderRadius: 1, textTransform: 'none', fontWeight: 600 }}
+            sx={{ textTransform: 'none', fontWeight: 600 }}
           >
             Agregar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Schedule Message Dialog */}
+      <Dialog
+        open={openScheduleDialog}
+        onClose={() => setOpenScheduleDialog(false)}
+        PaperProps={{ sx: { p: 2 } }}
+        TransitionComponent={Fade}
+      >
+        <DialogTitle sx={{ fontWeight: 700, color: 'primary.main' }}>Programar Mensaje</DialogTitle>
+        <DialogContent>
+          <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={es}>
+            <DateTimePicker
+              label="Fecha y hora de envío"
+              value={scheduledDate}
+              onChange={(newValue) => setScheduledDate(newValue)}
+              minDate={new Date()}
+              sx={{ mt: 2, width: '100%' }}
+              slotProps={{
+                textField: { variant: 'outlined', ariaLabel: 'Seleccionar fecha y hora' } as Partial<TextFieldProps>,
+              }}
+            />
+          </LocalizationProvider>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+            Selecciona la fecha y hora en la que deseas que se envíe el mensaje.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setOpenScheduleDialog(false)}
+            color="inherit"
+            aria-label="Cancelar"
+            sx={{ textTransform: 'none' }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleScheduleMessage}
+            variant="contained"
+            color="primary"
+            disabled={!scheduledDate || !nuevoMensaje.trim()}
+            aria-label="Programar mensaje"
+            sx={{ textTransform: 'none', fontWeight: 600 }}
+          >
+            Programar
           </Button>
         </DialogActions>
       </Dialog>
@@ -546,7 +681,7 @@ const Mensajes = () => {
       <Dialog
         open={!!openDeleteDialog}
         onClose={() => setOpenDeleteDialog(null)}
-        PaperProps={{ sx: { borderRadius: 2 } }}
+        PaperProps={{ sx: { p: 2 } }}
         TransitionComponent={Fade}
       >
         <DialogTitle sx={{ fontWeight: 700, color: 'error.main' }}>Confirmar Eliminación</DialogTitle>
@@ -567,7 +702,7 @@ const Mensajes = () => {
             variant="contained"
             color="error"
             aria-label="Eliminar mensaje"
-            sx={{ borderRadius: 1, textTransform: 'none', fontWeight: 600 }}
+            sx={{ textTransform: 'none', fontWeight: 600 }}
           >
             Eliminar
           </Button>
@@ -585,7 +720,7 @@ const Mensajes = () => {
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
-          sx={{ width: '100%', borderRadius: 1, fontWeight: 500 }}
+          sx={{ width: '100%', fontWeight: 500 }}
           iconMapping={{
             success: <SendIcon fontSize="inherit" />,
             error: <DeleteIcon fontSize="inherit" />,

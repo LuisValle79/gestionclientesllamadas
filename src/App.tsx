@@ -36,27 +36,51 @@ const theme = createTheme({
       contrastText: '#ffffff',
     },
     background: {
-      default: '#F8F9FA',
+      default: '#F5F7FA',
       paper: '#FFFFFF',
     },
   },
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-    h4: { fontWeight: 600 },
-    h5: { fontWeight: 500 },
+    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    h4: { fontWeight: 700, letterSpacing: -0.5 },
+    h5: { fontWeight: 600, letterSpacing: -0.3 },
     h6: { fontWeight: 500 },
-    button: { textTransform: 'none', fontWeight: 500 },
+    button: { textTransform: 'none', fontWeight: 500, letterSpacing: 0.5 },
   },
-  shape: { borderRadius: 8 },
+  shape: {
+    borderRadius: 0,
+  },
   components: {
     MuiAppBar: {
       styleOverrides: {
-        root: { boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.05)' },
+        root: {
+          boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.1)',
+          background: 'linear-gradient(90deg, #2E5077 0%, #4A6D8C 100%)',
+        },
       },
     },
     MuiPaper: {
       styleOverrides: {
-        root: { boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)' },
+        root: {
+          boxShadow: '0px 1px 5px rgba(0, 0, 0, 0.08)',
+          borderRadius: 0,
+          transition: 'box-shadow 0.2s ease-in-out',
+          '&:hover': {
+            boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.12)',
+          },
+        },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 0,
+          padding: '8px 16px',
+          transition: 'background-color 0.2s ease-in-out, transform 0.1s ease-in-out',
+          '&:hover': {
+            transform: 'translateY(-1px)',
+          },
+        },
       },
     },
   },
@@ -94,15 +118,12 @@ const AppContent = () => {
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: theme.palette.background.default }}>
       {/* Barra superior */}
-      <AppBar
-        position="fixed"
-        sx={{ zIndex: theme.zIndex.drawer + 1, bgcolor: theme.palette.primary.main }}
-      >
+      <AppBar position="fixed" sx={{ zIndex: theme.zIndex.drawer + 1 }}>
         <Toolbar>
           {isMobile && (
             <IconButton
               color="inherit"
-              aria-label="Abrir menú de navegación"
+              aria-label="Abrir menú"
               edge="start"
               onClick={handleDrawerToggle}
               sx={{ mr: 2 }}
@@ -110,7 +131,7 @@ const AppContent = () => {
               <MenuIcon />
             </IconButton>
           )}
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1, fontWeight: 500 }}>
+          <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
             {pageTitle}
           </Typography>
         </Toolbar>
@@ -125,19 +146,14 @@ const AppContent = () => {
         sx={{
           flexGrow: 1,
           p: { xs: 2, md: 3 },
-          width: isMobile ? '100%' : 'calc(100% - 250px)',
-          ml: isMobile ? 0 : '250px',
+          ml: { xs: 0, md: '250px' }, // Se ajusta al sidebar en desktop
           bgcolor: theme.palette.background.paper,
-          borderRadius: theme.shape.borderRadius,
-          minHeight: '100vh',
-          boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.05)',
           display: 'flex',
           flexDirection: 'column',
+          minHeight: '100vh',
         }}
       >
-        {/* Espaciador para el AppBar */}
         <Toolbar />
-        {/* Aquí van las páginas */}
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" />} />
           <Route path="/dashboard" element={<Dashboard />} />
