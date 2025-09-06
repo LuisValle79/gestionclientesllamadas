@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
-  Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
+  Box, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, TextField, Dialog, DialogActions, DialogContent,
-  DialogTitle, Box, IconButton, CircularProgress, Snackbar, Alert, TablePagination,
+  DialogTitle, IconButton, CircularProgress, Snackbar, Alert, TablePagination,
   FormControl, InputLabel, Select, MenuItem, useTheme,
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
@@ -22,7 +22,7 @@ type Usuario = {
   email: string;
   nombre: string | null;
   apellido: string | null;
-  rol: 'administrador' | 'asesor' | 'cliente';
+  rol: 'administrador' | 'asesor' | 'cliente' | null;
   telefono: string | null;
   created_at: string;
   password?: string;
@@ -68,14 +68,14 @@ const Usuarios = () => {
       setLoading(true);
       const { data, error } = await supabase.rpc('get_usuarios_con_perfiles');
       if (error) throw error;
-      console.log('Usuarios obtenidos:', data); // Log para depuración
+      console.log('Usuarios obtenidos:', data);
       setUsuarios(
         data?.map((item: any) => ({
           id: item.id,
           email: item.email,
           nombre: item.nombre || null,
           apellido: item.apellido || null,
-          rol: item.rol as 'administrador' | 'asesor' | 'cliente',
+          rol: item.rol || 'cliente', // Fallback a 'cliente' si rol es null
           telefono: item.telefono || null,
           created_at: item.created_at,
         })) || []
@@ -88,35 +88,36 @@ const Usuarios = () => {
     }
   };
 
-const handleOpenDialog = (usuario?: Usuario) => {
-  if (usuario) {
-    setCurrentUsuario({
-      ...usuario,
-      password: '', // Asegúrate de que password esté definido, aunque no se use en edición
-    });
-    setIsEditing(true);
-  } else {
-    setCurrentUsuario({
-      email: '',
-      nombre: null,
-      apellido: null,
-      rol: 'cliente',
-      telefono: null,
-      password: '', // Inicializa password como cadena vacía
-    });
-    setIsEditing(false);
-  }
-  setOpenDialog(true);
-};
+  const handleOpenDialog = (usuario?: Usuario) => {
+    if (usuario) {
+      setCurrentUsuario({
+        ...usuario,
+        password: '', // Inicializa password como cadena vacía para edición
+      });
+      setIsEditing(true);
+    } else {
+      setCurrentUsuario({
+        email: '',
+        nombre: null,
+        apellido: null,
+        rol: 'cliente',
+        telefono: null,
+        password: '',
+      });
+      setIsEditing(false);
+    }
+    setOpenDialog(true);
+  };
+
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setCurrentUsuario({});
   };
 
-const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const { name, value } = e.target;
-  setCurrentUsuario({ ...currentUsuario, [name]: value || '' }); // Cambia null a '' para password
-};
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setCurrentUsuario({ ...currentUsuario, [name]: value || null }); // Maneja null para campos opcionales
+  };
 
   const handleRoleChange = (event: SelectChangeEvent) => {
     setCurrentUsuario({
@@ -125,24 +126,20 @@ const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     });
   };
 
-const handleSaveUsuario = async () => {
-  try {
-    // Validar campos obligatorios
-    if (!currentUsuario.email || !currentUsuario.rol) {
-      setSnackbar({ open: true, message: 'Email y rol son obligatorios', severity: 'error' });
-      return;
-    }
+  const handleSaveUsuario = async () => {
+    try {
+      if (!currentUsuario.email || !currentUsuario.rol) {
+        setSnackbar({ open: true, message: 'Email y rol son obligatorios', severity: 'error' });
+        return;
+      }
 
-    // Validar formato de email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(currentUsuario.email)) {
-      setSnackbar({ open: true, message: 'Formato de email inválido', severity: 'error' });
-      return;
-    }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(currentUsuario.email)) {
+        setSnackbar({ open: true, message: 'Formato de email inválido', severity: 'error' });
+        return;
+      }
 
-    if (!isEditing) {
-      // Validar contraseña para nuevos usuarios
-      if (!currentUsuario.password || currentUsuario.password.length < 6) {
+      if (!isEditing && (!currentUsuario.password || currentUsuario.password.length < 6)) {
         setSnackbar({
           open: true,
           message: 'La contraseña es obligatoria y debe tener al menos 6 caracteres',
@@ -150,77 +147,68 @@ const handleSaveUsuario = async () => {
         });
         return;
       }
-    }
 
-    if (isEditing) {
-      // Actualizar usuario existente
-      const { error } = await supabase.rpc('actualizar_usuario', {
-        usuario_id: currentUsuario.id,
-        nuevo_nombre: currentUsuario.nombre || null,
-        nuevo_apellido: currentUsuario.apellido || null,
-        nuevo_rol: currentUsuario.rol,
-        nuevo_telefono: currentUsuario.telefono || null,
-      });
+      if (isEditing) {
+        const { error } = await supabase.rpc('actualizar_usuario', {
+          usuario_id: currentUsuario.id,
+          nuevo_nombre: currentUsuario.nombre || null,
+          nuevo_apellido: currentUsuario.apellido || null,
+          nuevo_rol: currentUsuario.rol,
+          nuevo_telefono: currentUsuario.telefono || null,
+        });
 
-      if (error) throw new Error(`Error al actualizar usuario: ${error.message}`);
-      setSnackbar({ open: true, message: 'Usuario actualizado correctamente', severity: 'success' });
-    } else {
-      // Registrar nuevo usuario
-      console.log('Datos enviados a signUp:', {
-        email: currentUsuario.email,
-        password: currentUsuario.password,
-      });
-
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: currentUsuario.email,
-        password: currentUsuario.password || '', // Fallback a cadena vacía (aunque la validación previa debería evitar esto)
-        options: {
-          data: {
-            nombre: currentUsuario.nombre || null,
-            apellido: currentUsuario.apellido || null,
-            telefono: currentUsuario.telefono || null,
+        if (error) throw new Error(`Error al actualizar usuario: ${error.message}`);
+        setSnackbar({ open: true, message: 'Usuario actualizado correctamente', severity: 'success' });
+      } else {
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: currentUsuario.email,
+          password: currentUsuario.password || '',
+          options: {
+            data: {
+              nombre: currentUsuario.nombre || null,
+              apellido: currentUsuario.apellido || null,
+              telefono: currentUsuario.telefono || null,
+            },
           },
-        },
+        });
+
+        if (authError) {
+          console.error('Error en signUp:', authError);
+          throw new Error(authError.message);
+        }
+
+        if (!authData.user) {
+          throw new Error('No se pudo crear el usuario');
+        }
+
+        const { error: rpcError } = await supabase.rpc('crear_usuario_con_rol', {
+          email: currentUsuario.email,
+          nombre: currentUsuario.nombre || null,
+          apellido: currentUsuario.apellido || null,
+          rol: currentUsuario.rol,
+          telefono: currentUsuario.telefono || null,
+        });
+
+        if (rpcError) {
+          console.error('Error en crear_usuario_con_rol:', rpcError);
+          throw new Error(`Error al crear perfil: ${rpcError.message}`);
+        }
+
+        setSnackbar({ open: true, message: 'Usuario creado correctamente', severity: 'success' });
+      }
+
+      handleCloseDialog();
+      fetchUsuarios();
+    } catch (error: any) {
+      console.error('Error al guardar usuario:', error);
+      setSnackbar({
+        open: true,
+        message: `Error al guardar usuario: ${error.message}`,
+        severity: 'error',
       });
-
-      if (authError) {
-        console.error('Error en signUp:', authError);
-        throw new Error(authError.message);
-      }
-
-      // Verificar que el usuario se creó
-      if (!authData.user) {
-        throw new Error('No se pudo crear el usuario');
-      }
-
-      // Registrar perfil en perfiles_usuario
-      const { error: rpcError } = await supabase.rpc('crear_usuario_con_rol', {
-        email: currentUsuario.email,
-        nombre: currentUsuario.nombre || null,
-        apellido: currentUsuario.apellido || null,
-        rol: currentUsuario.rol,
-        telefono: currentUsuario.telefono || null,
-      });
-
-      if (rpcError) {
-        console.error('Error en crear_usuario_con_rol:', rpcError);
-        throw new Error(`Error al crear perfil: ${rpcError.message}`);
-      }
-
-      setSnackbar({ open: true, message: 'Usuario creado correctamente', severity: 'success' });
     }
+  };
 
-    handleCloseDialog();
-    fetchUsuarios();
-  } catch (error: any) {
-    console.error('Error al guardar usuario:', error);
-    setSnackbar({
-      open: true,
-      message: `Error al guardar usuario: ${error.message}`,
-      severity: 'error',
-    });
-  }
-};
   const handleDeleteUsuario = async (id: string) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
       try {
@@ -245,7 +233,7 @@ const handleSaveUsuario = async () => {
     setPage(0);
   };
 
-  const getRolIcon = (rol: string) => {
+  const getRolIcon = (rol: string | null) => {
     switch (rol) {
       case 'administrador':
         return <AdminIcon color="primary" sx={{ fontSize: '1.2rem' }} />;
@@ -260,23 +248,57 @@ const handleSaveUsuario = async () => {
 
   if (userRole !== 'administrador') {
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Paper sx={{ p: 3, borderRadius: theme.shape.borderRadius, boxShadow: theme.shadows[2] }}>
-          <Typography variant="h6" component="h2" gutterBottom sx={{ fontWeight: '500' }}>
-            Acceso denegado
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            No tienes permisos para acceder a esta sección. Esta página está reservada para administradores.
-          </Typography>
-        </Paper>
-      </Container>
+      <Box
+        sx={{
+          width: '100%',
+          maxWidth: '100%',
+          p: { xs: 2, sm: 3, md: 4 },
+          bgcolor: theme.palette.background.paper,
+          borderRadius: 2,
+          boxShadow: theme.shadows[3],
+        }}
+      >
+        <Typography
+          variant="h6"
+          component="h2"
+          gutterBottom
+          sx={{ fontWeight: 500, color: theme.palette.text.primary }}
+        >
+          Acceso denegado
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          No tienes permisos para acceder a esta sección. Esta página está reservada para administradores.
+        </Typography>
+      </Box>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: theme.spacing(3) }}>
-        <Typography variant="h5" component="h1" sx={{ fontWeight: '600', color: theme.palette.text.primary }}>
+    <Box
+      sx={{
+        width: '100%',
+        maxWidth: '100%',
+        p: { xs: 2, sm: 3, md: 4 },
+        bgcolor: theme.palette.background.paper,
+        borderRadius: 2,
+        boxShadow: theme.shadows[3],
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 3,
+          gap: 1.5,
+          flexWrap: 'wrap',
+        }}
+      >
+        <Typography
+          variant="h4"
+          component="h1"
+          sx={{ fontWeight: 700, color: theme.palette.text.primary }}
+        >
           Gestión de Usuarios
         </Typography>
         <Button
@@ -284,101 +306,141 @@ const handleSaveUsuario = async () => {
           color="primary"
           startIcon={<AddIcon />}
           onClick={() => handleOpenDialog()}
-          sx={{ borderRadius: theme.shape.borderRadius, px: 3, py: 1, fontSize: '0.9rem' }}
+          sx={{ borderRadius: 2, px: 3, py: 1 }}
           aria-label="Crear nuevo usuario"
         >
           Nuevo Usuario
         </Button>
       </Box>
 
-      <Paper sx={{ width: '100%', borderRadius: theme.shape.borderRadius, boxShadow: theme.shadows[2], overflow: 'hidden' }}>
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <CircularProgress aria-label="Cargando usuarios" />
-          </Box>
-        ) : (
-          <>
-            <TableContainer sx={{ maxHeight: 440 }}>
-              <Table stickyHeader aria-label="Tabla de usuarios">
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary }}>
-                      Email
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary }}>
-                      Nombre
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary }}>
-                      Apellido
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary }}>
-                      Rol
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary }}>
-                      Teléfono
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: '600', bgcolor: theme.palette.background.default, color: theme.palette.text.primary, textAlign: 'center' }}>
-                      Acciones
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {usuarios
-                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((usuario) => (
-                      <TableRow hover key={usuario.id} sx={{ '&:hover': { bgcolor: theme.palette.action.hover }, transition: 'background-color 0.2s' }}>
-                        <TableCell>{usuario.email}</TableCell>
-                        <TableCell>{usuario.nombre || '-'}</TableCell>
-                        <TableCell>{usuario.apellido || '-'}</TableCell>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            {getRolIcon(usuario.rol)}
-                            <Typography sx={{ ml: 1, fontSize: '0.9rem' }}>
-                              {usuario.rol.charAt(0).toUpperCase() + usuario.rol.slice(1)}
-                            </Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell>{usuario.telefono || '-'}</TableCell>
-                        <TableCell align="center">
+      {loading ? (
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            p: 4,
+            bgcolor: theme.palette.background.default,
+            borderRadius: 2,
+          }}
+        >
+          <CircularProgress size={32} aria-label="Cargando usuarios" />
+        </Box>
+      ) : (
+        <Paper
+          sx={{
+            width: '100%',
+            overflow: 'hidden',
+            borderRadius: 2,
+            boxShadow: theme.shadows[3],
+          }}
+        >
+          <TableContainer sx={{ maxWidth: '100%', overflowX: 'auto' }}>
+            <Table stickyHeader aria-label="Tabla de usuarios">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100], color: theme.palette.text.primary }}>
+                    Email
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100], color: theme.palette.text.primary }}>
+                    Nombre
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100], color: theme.palette.text.primary }}>
+                    Apellido
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100], color: theme.palette.text.primary }}>
+                    Rol
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100], color: theme.palette.text.primary }}>
+                    Teléfono
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, bgcolor: theme.palette.grey[100], color: theme.palette.text.primary, textAlign: 'center' }}>
+                    Acciones
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {usuarios
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((usuario) => (
+                    <TableRow
+                      hover
+                      key={usuario.id}
+                      sx={{
+                        '&:nth-of-type(odd)': { backgroundColor: theme.palette.background.default },
+                        '&:hover': { backgroundColor: theme.palette.action.hover },
+                      }}
+                    >
+                      <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{usuario.email}</TableCell>
+                      <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{usuario.nombre || '-'}</TableCell>
+                      <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{usuario.apellido || '-'}</TableCell>
+                      <TableCell sx={{ py: 1.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {getRolIcon(usuario.rol)}
+                          <Typography sx={{ fontSize: '0.9rem' }}>
+                            {usuario.rol ? usuario.rol.charAt(0).toUpperCase() + usuario.rol.slice(1) : 'Sin rol'}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell sx={{ py: 1.5, fontSize: '0.9rem' }}>{usuario.telefono || '-'}</TableCell>
+                      <TableCell align="center" sx={{ py: 1.5 }}>
+                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
                           <IconButton
                             color="primary"
                             onClick={() => handleOpenDialog(usuario)}
                             size="small"
                             aria-label={`Editar usuario ${usuario.email}`}
+                            sx={{ '&:hover': { bgcolor: theme.palette.primary.light, color: '#fff' } }}
                           >
-                            <EditIcon />
+                            <EditIcon fontSize="small" />
                           </IconButton>
                           <IconButton
                             color="error"
                             onClick={() => handleDeleteUsuario(usuario.id)}
                             size="small"
                             aria-label={`Eliminar usuario ${usuario.email}`}
+                            sx={{ '&:hover': { bgcolor: theme.palette.error.light, color: '#fff' } }}
                           >
-                            <DeleteIcon />
+                            <DeleteIcon fontSize="small" />
                           </IconButton>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-            <TablePagination
-              rowsPerPageOptions={[5, 10, 25]}
-              component="div"
-              count={usuarios.length}
-              rowsPerPage={rowsPerPage}
-              page={page}
-              onPageChange={handleChangePage}
-              onRowsPerPageChange={handleChangeRowsPerPage}
-              labelRowsPerPage="Filas por página:"
-              sx={{ bgcolor: theme.palette.background.paper }}
-            />
-          </>
-        )}
-      </Paper>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                {usuarios.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 4, fontSize: '1rem', color: theme.palette.text.secondary }}>
+                      No hay usuarios registrados
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <TablePagination
+            rowsPerPageOptions={[5, 10, 25]}
+            component="div"
+            count={usuarios.length}
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={handleChangePage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            labelRowsPerPage="Filas por página:"
+            sx={{ borderTop: `1px solid ${theme.palette.divider}` }}
+          />
+        </Paper>
+      )}
 
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth sx={{ '& .MuiDialog-paper': { borderRadius: theme.shape.borderRadius, p: 2 } }}>
-        <DialogTitle sx={{ fontWeight: '500' }}>{isEditing ? 'Editar Usuario' : 'Nuevo Usuario'}</DialogTitle>
+      <Dialog
+        open={openDialog}
+        onClose={handleCloseDialog}
+        maxWidth="sm"
+        fullWidth
+        sx={{ '& .MuiDialog-paper': { borderRadius: 2, p: 2 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 600, fontSize: '1.25rem' }}>
+          {isEditing ? 'Editar Usuario' : 'Nuevo Usuario'}
+        </DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -391,7 +453,7 @@ const handleSaveUsuario = async () => {
             value={currentUsuario.email || ''}
             onChange={handleInputChange}
             disabled={isEditing}
-            sx={{ bgcolor: theme.palette.background.paper }}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             aria-label="Email del usuario"
             required
           />
@@ -405,7 +467,7 @@ const handleSaveUsuario = async () => {
               variant="outlined"
               value={currentUsuario.password || ''}
               onChange={handleInputChange}
-              sx={{ bgcolor: theme.palette.background.paper }}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
               aria-label="Contraseña del usuario"
               required
             />
@@ -418,7 +480,7 @@ const handleSaveUsuario = async () => {
             variant="outlined"
             value={currentUsuario.nombre || ''}
             onChange={handleInputChange}
-            sx={{ bgcolor: theme.palette.background.paper }}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             aria-label="Nombre del usuario"
           />
           <TextField
@@ -429,10 +491,13 @@ const handleSaveUsuario = async () => {
             variant="outlined"
             value={currentUsuario.apellido || ''}
             onChange={handleInputChange}
-            sx={{ bgcolor: theme.palette.background.paper }}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             aria-label="Apellido del usuario"
           />
-          <FormControl fullWidth sx={{ mt: 2, bgcolor: theme.palette.background.paper }}>
+          <FormControl
+            fullWidth
+            sx={{ mt: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+          >
             <InputLabel id="rol-label">Rol</InputLabel>
             <Select
               labelId="rol-label"
@@ -454,20 +519,26 @@ const handleSaveUsuario = async () => {
             variant="outlined"
             value={currentUsuario.telefono || ''}
             onChange={handleInputChange}
-            sx={{ bgcolor: theme.palette.background.paper }}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             aria-label="Teléfono del usuario"
             helperText="Incluye el código de país (ej: +51987654321)"
           />
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={handleCloseDialog} color="inherit" sx={{ borderRadius: theme.shape.borderRadius }} aria-label="Cancelar">
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleCloseDialog}
+            variant="outlined"
+            color="inherit"
+            sx={{ borderRadius: 2 }}
+            aria-label="Cancelar"
+          >
             Cancelar
           </Button>
           <Button
             onClick={handleSaveUsuario}
             variant="contained"
             color="primary"
-            sx={{ borderRadius: theme.shape.borderRadius, px: 3 }}
+            sx={{ borderRadius: 2, px: 3 }}
             aria-label="Guardar usuario"
           >
             Guardar
@@ -484,12 +555,12 @@ const handleSaveUsuario = async () => {
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
-          sx={{ width: '100%', borderRadius: theme.shape.borderRadius }}
+          sx={{ width: '100%', borderRadius: 2 }}
         >
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Container>
+    </Box>
   );
 };
 

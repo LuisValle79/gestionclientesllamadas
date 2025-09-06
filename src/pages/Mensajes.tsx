@@ -4,8 +4,9 @@ import {
   DialogContent, DialogTitle, Snackbar, Alert, List, ListItem,
   ListItemText, ListItemAvatar, Avatar, Divider, FormControl, InputLabel, Select,
   MenuItem, IconButton, Skeleton, InputAdornment, Fade, type TextFieldProps, Checkbox, FormControlLabel,
+  CircularProgress, Chip,
 } from '@mui/material';
-import { Send as SendIcon, PersonAdd as PersonAddIcon, Delete as DeleteIcon, Schedule as ScheduleIcon } from '@mui/icons-material';
+import { Send as SendIcon, PersonAdd as PersonAddIcon, Delete as DeleteIcon, Schedule as ScheduleIcon, AttachFile as AttachFileIcon } from '@mui/icons-material';
 import type { SelectChangeEvent } from '@mui/material';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -26,6 +27,7 @@ type Mensaje = {
   contenido: string;
   tipo: 'enviado' | 'recibido';
   created_at: string;
+  file_url?: string | null;
   cliente?: Cliente;
 };
 
@@ -35,6 +37,8 @@ const Mensajes = () => {
   const [selectedClientes, setSelectedClientes] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
   const [nuevoMensaje, setNuevoMensaje] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const [nuevoClienteNombre, setNuevoClienteNombre] = useState('');
   const [nuevoClienteTelefono, setNuevoClienteTelefono] = useState('');
   const [nuevoClienteRazonSocial, setNuevoClienteRazonSocial] = useState('');
@@ -97,6 +101,7 @@ const Mensajes = () => {
           contenido,
           tipo,
           created_at,
+          file_url,
           clientes!mensajes_cliente_id_fkey (id, nombre, telefono, razon_social)
         `)
         .eq('cliente_id', clienteId)
@@ -109,6 +114,7 @@ const Mensajes = () => {
         contenido: item.contenido,
         tipo: item.tipo,
         created_at: item.created_at,
+        file_url: item.file_url,
         cliente: item.clientes && item.clientes.length > 0 ? item.clientes[0] : undefined,
       })) || [];
       console.log('Mensajes obtenidos para cliente_id:', clienteId, mensajesMapped);
@@ -127,6 +133,7 @@ const Mensajes = () => {
     setSelectedClientes(value);
     setSelectAll(value.length === clientes.length && clientes.length > 0);
     setNuevoMensaje('');
+    setSelectedFiles([]);
   };
 
   const handleSelectAllChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -134,6 +141,54 @@ const Mensajes = () => {
     setSelectAll(checked);
     setSelectedClientes(checked ? clientes.map(c => c.id) : []);
     setNuevoMensaje('');
+    setSelectedFiles([]);
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const validFiles = Array.from(files).filter(file => 
+        file.type === 'application/pdf' || 
+        file.type.startsWith('image/')
+      );
+      if (validFiles.length < files.length) {
+        setSnackbar({ open: true, message: 'Solo se permiten archivos PDF e imágenes', severity: 'warning' });
+      }
+      setSelectedFiles(validFiles);
+    }
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadFiles = async (files: File[]) => {
+    try {
+      setUploadingFiles(true);
+      const fileUrls: string[] = [];
+      for (const file of files) {
+        const fileName = `${crypto.randomUUID()}-${file.name}`;
+        const { error } = await supabase.storage
+          .from('message-files')
+          .upload(fileName, file);
+        if (error) throw error;
+        const { data } = supabase.storage
+          .from('message-files')
+          .getPublicUrl(fileName);
+        if (data?.publicUrl) {
+          fileUrls.push(data.publicUrl);
+        } else {
+          throw new Error('No se pudo obtener la URL pública del archivo');
+        }
+      }
+      return fileUrls;
+    } catch (error: any) {
+      console.error('Error al cargar archivos:', error.message);
+      setSnackbar({ open: true, message: `Error al cargar archivos: ${error.message}`, severity: 'error' });
+      return [];
+    } finally {
+      setUploadingFiles(false);
+    }
   };
 
   const handleOpenDialog = () => setOpenDialog(true);
@@ -167,19 +222,23 @@ const Mensajes = () => {
     }
   };
 
-  const generatePersonalizedMessage = (cliente: Cliente) => {
-    if (!cliente || !cliente.nombre) return nuevoMensaje || 'Mensaje no personalizado';
+  const generatePersonalizedMessage = (cliente: Cliente, fileUrls: string[] = []) => {
+    if (!cliente || !cliente.nombre) {
+      const baseMessage = nuevoMensaje || 'Mensaje no personalizado';
+      return fileUrls.length > 0 ? `${baseMessage}\nArchivos: ${fileUrls.join(', ')}` : baseMessage;
+    }
     const nombre = cliente.nombre;
     const razonSocial = cliente.razon_social || 'su empresa';
-    return `Hola, señor ${nombre}. 👋
+    const baseMessage = `Hola, señor ${nombre}. 👋
 Soy Luis Valle, representante comercial de EXCELSIUS, una empresa conformada por ingenieros full stack especializados en el desarrollo de software para distintos sectores de negocio.
 
 En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, reducir costos, aumentar productividad, mejorar la toma de decisiones y crecer a través de soluciones tecnológicas personalizadas: desde sistemas ERP que integran procesos completos, hasta desarrollo de software a medida, aplicaciones móviles, inteligencia de negocios con Power BI y soluciones de e-commerce.
 
 📅 Me gustaría coordinar una reunión breve para conocer sus necesidades específicas y mostrarle cómo podemos apoyarlos a potenciar la competitividad de ${razonSocial} con soluciones digitales a su medida.`;
+    return fileUrls.length > 0 ? `${baseMessage}\nArchivos: ${fileUrls.join(', ')}` : baseMessage;
   };
 
-  const handleGeneratePersonalizedMessage = () => {
+  const handleGeneratePersonalizedMessage = async () => {
     if (selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0])) {
       setSnackbar({ open: true, message: 'Selecciona exactamente un cliente para personalizar el mensaje', severity: 'error' });
       return;
@@ -191,28 +250,42 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
       return;
     }
 
-    const personalizedMessage = generatePersonalizedMessage(cliente);
+    let fileUrls: string[] = [];
+    if (selectedFiles.length > 0) {
+      fileUrls = await uploadFiles(selectedFiles);
+      if (fileUrls.length === 0) return;
+    }
+
+    const personalizedMessage = generatePersonalizedMessage(cliente, fileUrls);
     setNuevoMensaje(personalizedMessage);
+    setSelectedFiles([]);
   };
 
   const handleEnviarMensaje = async () => {
-    if (selectedClientes.length === 0 || !nuevoMensaje.trim()) {
-      setSnackbar({ open: true, message: 'Selecciona al menos un cliente y escribe un mensaje', severity: 'error' });
+    if (selectedClientes.length === 0 || (!nuevoMensaje.trim() && selectedFiles.length === 0)) {
+      setSnackbar({ open: true, message: 'Selecciona al menos un cliente y escribe un mensaje o adjunta un archivo', severity: 'error' });
       return;
     }
 
     try {
+      let fileUrls: string[] = [];
+      if (selectedFiles.length > 0) {
+        fileUrls = await uploadFiles(selectedFiles);
+        if (fileUrls.length === 0) return;
+      }
+
       const messagesToInsert = selectedClientes
         .filter(id => isValidUUID(id))
         .map(clienteId => {
           const cliente = clientes.find(c => c.id === clienteId);
           const contenido = cliente?.nombre && cliente?.razon_social 
-            ? generatePersonalizedMessage(cliente)
-            : nuevoMensaje;
+            ? generatePersonalizedMessage(cliente, fileUrls)
+            : nuevoMensaje + (fileUrls.length > 0 ? `\nArchivos: ${fileUrls.join(', ')}` : '');
           return {
             cliente_id: clienteId,
             contenido,
             tipo: 'enviado',
+            file_url: fileUrls.length > 0 ? fileUrls[0] : null,
           };
         });
 
@@ -228,8 +301,8 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
 
       clientsWithPhone.forEach(cliente => {
         const contenido = cliente.nombre && cliente.razon_social 
-          ? generatePersonalizedMessage(cliente)
-          : nuevoMensaje;
+          ? generatePersonalizedMessage(cliente, fileUrls)
+          : nuevoMensaje + (fileUrls.length > 0 ? `\nArchivos: ${fileUrls.join(', ')}` : '');
         const formattedPhone = cliente.telefono!.replace(/\D/g, '');
         window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(contenido)}`, '_blank');
       });
@@ -245,6 +318,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
       }
 
       setNuevoMensaje('');
+      setSelectedFiles([]);
       if (selectedClientes.length === 1) {
         fetchMensajes(selectedClientes[0]);
       } else {
@@ -257,23 +331,30 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
   };
 
   const handleScheduleMessage = async () => {
-    if (selectedClientes.length === 0 || !nuevoMensaje.trim() || !scheduledDate) {
-      setSnackbar({ open: true, message: 'Selecciona al menos un cliente, escribe un mensaje y selecciona una fecha/hora', severity: 'error' });
+    if (selectedClientes.length === 0 || (!nuevoMensaje.trim() && selectedFiles.length === 0) || !scheduledDate) {
+      setSnackbar({ open: true, message: 'Selecciona al menos un cliente, escribe un mensaje o adjunta un archivo, y selecciona una fecha/hora', severity: 'error' });
       return;
     }
 
     try {
+      let fileUrls: string[] = [];
+      if (selectedFiles.length > 0) {
+        fileUrls = await uploadFiles(selectedFiles);
+        if (fileUrls.length === 0) return;
+      }
+
       const messagesToInsert = selectedClientes
         .filter(id => isValidUUID(id))
         .map(clienteId => {
           const cliente = clientes.find(c => c.id === clienteId);
           const contenido = cliente?.nombre && cliente?.razon_social 
-            ? generatePersonalizedMessage(cliente)
-            : nuevoMensaje;
+            ? generatePersonalizedMessage(cliente, fileUrls)
+            : nuevoMensaje + (fileUrls.length > 0 ? `\nArchivos: ${fileUrls.join(', ')}` : '');
           return {
             cliente_id: clienteId,
             contenido,
             scheduled_at: scheduledDate.toISOString(),
+            file_url: fileUrls.length > 0 ? fileUrls[0] : null,
           };
         });
 
@@ -284,6 +365,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
       if (error) throw error;
 
       setNuevoMensaje('');
+      setSelectedFiles([]);
       setScheduledDate(null);
       setOpenScheduleDialog(false);
       setSnackbar({ open: true, message: `Mensajes programados correctamente para ${selectedClientes.length} cliente(s)`, severity: 'success' });
@@ -294,25 +376,34 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
   };
 
   const handleRegistrarMensajeRecibido = async () => {
-    if (selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0]) || !nuevoMensaje.trim()) {
-      setSnackbar({ open: true, message: 'Selecciona exactamente un cliente válido y escribe el mensaje recibido', severity: 'error' });
+    if (selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0]) || (!nuevoMensaje.trim() && selectedFiles.length === 0)) {
+      setSnackbar({ open: true, message: 'Selecciona exactamente un cliente válido y escribe un mensaje o adjunta un archivo', severity: 'error' });
       return;
     }
 
     try {
+      let fileUrls: string[] = [];
+      if (selectedFiles.length > 0) {
+        fileUrls = await uploadFiles(selectedFiles);
+        if (fileUrls.length === 0) return;
+      }
+
+      const contenido = nuevoMensaje + (fileUrls.length > 0 ? `\nArchivos: ${fileUrls.join(', ')}` : '');
       const { error } = await supabase
         .from('mensajes')
         .insert([
           {
             cliente_id: selectedClientes[0],
-            contenido: nuevoMensaje,
+            contenido,
             tipo: 'recibido',
+            file_url: fileUrls.length > 0 ? fileUrls[0] : null,
           },
         ]);
 
       if (error) throw error;
 
       setNuevoMensaje('');
+      setSelectedFiles([]);
       setSnackbar({ open: true, message: 'Mensaje recibido registrado correctamente', severity: 'success' });
       fetchMensajes(selectedClientes[0]);
     } catch (error: any) {
@@ -323,6 +414,14 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
 
   const handleDeleteMensaje = async (id: string) => {
     try {
+      const mensaje = mensajes.find(m => m.id === id);
+      if (mensaje?.file_url) {
+        const fileName = mensaje.file_url.split('/').pop();
+        if (fileName) {
+          await supabase.storage.from('message-files').remove([fileName]);
+        }
+      }
+
       const { error } = await supabase
         .from('mensajes')
         .delete()
@@ -494,7 +593,18 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
                         </ListItemAvatar>
                       )}
                       <ListItemText
-                        primary={mensaje.contenido}
+                        primary={
+                          <>
+                            {mensaje.contenido}
+                            {mensaje.file_url && (
+                              <Box sx={{ mt: 1 }}>
+                                <a href={mensaje.file_url} target="_blank" rel="noopener noreferrer">
+                                  {mensaje.file_url.endsWith('.pdf') ? 'Ver PDF' : 'Ver Imagen'}
+                                </a>
+                              </Box>
+                            )}
+                          </>
+                        }
                         secondary={formatDate(mensaje.created_at)}
                         sx={{
                           bgcolor: mensaje.tipo === 'enviado' ? 'primary.light' : 'grey.200',
@@ -534,7 +644,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
             '&:hover': { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)' },
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField
               fullWidth
               label="Escribe un mensaje"
@@ -556,13 +666,43 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
               }}
               inputProps={{ maxLength: 500 }}
             />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={<AttachFileIcon />}
+                disabled={uploadingFiles}
+                sx={{ textTransform: 'none', fontWeight: 600 }}
+                aria-label="Adjuntar archivo"
+              >
+                Adjuntar archivo
+                <input
+                  type="file"
+                  hidden
+                  accept="image/*,application/pdf"
+                  multiple
+                  onChange={handleFileChange}
+                />
+              </Button>
+              {uploadingFiles && <CircularProgress size={24} />}
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {selectedFiles.map((file, index) => (
+                  <Chip
+                    key={index}
+                    label={file.name}
+                    onDelete={() => handleRemoveFile(index)}
+                    sx={{ bgcolor: 'grey.200' }}
+                  />
+                ))}
+              </Box>
+            </Box>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minWidth: 120 }}>
               <Button
                 variant="contained"
                 color="primary"
                 endIcon={<SendIcon />}
                 onClick={handleEnviarMensaje}
-                disabled={!nuevoMensaje.trim() || selectedClientes.length === 0}
+                disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length === 0 || uploadingFiles}
                 aria-label="Enviar mensaje"
                 sx={{
                   textTransform: 'none',
@@ -577,7 +717,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
                 variant="outlined"
                 color="secondary"
                 onClick={handleRegistrarMensajeRecibido}
-                disabled={!nuevoMensaje.trim() || selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0])}
+                disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0]) || uploadingFiles}
                 aria-label="Registrar mensaje recibido"
                 sx={{ textTransform: 'none', fontWeight: 600 }}
               >
@@ -587,7 +727,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
                 variant="contained"
                 color="primary"
                 onClick={handleGeneratePersonalizedMessage}
-                disabled={selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0])}
+                disabled={selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0]) || uploadingFiles}
                 aria-label="Ingresar mensaje personalizado"
                 sx={{
                   textTransform: 'none',
@@ -603,7 +743,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
                 color="primary"
                 startIcon={<ScheduleIcon />}
                 onClick={() => setOpenScheduleDialog(true)}
-                disabled={!nuevoMensaje.trim() || selectedClientes.length === 0}
+                disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length === 0 || uploadingFiles}
                 aria-label="Programar mensaje"
                 sx={{ textTransform: 'none', fontWeight: 600 }}
               >
@@ -737,7 +877,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
             onClick={handleScheduleMessage}
             variant="contained"
             color="primary"
-            disabled={!scheduledDate || !nuevoMensaje.trim()}
+            disabled={!scheduledDate || (!nuevoMensaje.trim() && selectedFiles.length === 0)}
             aria-label="Programar mensaje"
             sx={{ textTransform: 'none', fontWeight: 600 }}
           >
@@ -793,6 +933,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
           iconMapping={{
             success: <SendIcon fontSize="inherit" />,
             error: <DeleteIcon fontSize="inherit" />,
+            warning: <AttachFileIcon fontSize="inherit" />,
           }}
         >
           {snackbar.message}
