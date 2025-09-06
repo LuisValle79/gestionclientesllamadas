@@ -28,13 +28,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     // Escuchar cambios en la autenticación
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session)
-        setUser(session?.user ?? null)
-        setLoading(false)
-      }
-    )
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+      setLoading(false)
+    })
 
     return () => {
       subscription.unsubscribe()
@@ -42,15 +42,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signIn = async (email: string, password: string) => {
-    await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) throw error
   }
 
   const signUp = async (email: string, password: string) => {
-    await supabase.auth.signUp({ email, password })
+    const { error } = await supabase.auth.signUp({ email, password })
+    if (error) throw error
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    try {
+      const { error } = await supabase.auth.signOut({ scope: 'local' })
+      // Ignorar el error de sesión faltante, ya que significa que no había sesión activa
+      if (error && error.name !== 'AuthSessionMissingError') {
+        throw error
+      }
+      setSession(null)
+      setUser(null)
+    } catch (err: any) {
+      console.warn('SignOut warning:', err.message)
+    }
   }
 
   const value: AuthContextType = {
