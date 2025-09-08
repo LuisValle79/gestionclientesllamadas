@@ -12,16 +12,18 @@ import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { es } from 'date-fns/locale';
+import { useAuth } from '../context/AuthContext';
 
 type Cliente = {
-  id: string; // Cambiado a string para UUID
+  id: string;
   nombre: string;
   telefono: string;
+  created_by: string | null;
 };
 
 type Recordatorio = {
   id: number;
-  cliente_id: string; // Cambiado a string para UUID
+  cliente_id: string;
   titulo: string;
   descripcion: string;
   fecha: string;
@@ -33,56 +35,59 @@ type Recordatorio = {
 
 const Recordatorios = () => {
   const theme = useTheme();
+  const { user } = useAuth();
   const [recordatorios, setRecordatorios] = useState<Recordatorio[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [currentRecordatorio, setCurrentRecordatorio] = useState<Partial<Recordatorio>>({});
   const [isEditing, setIsEditing] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' });
   const [filtroCompletado, setFiltroCompletado] = useState<string>('pendientes');
 
   useEffect(() => {
-    const checkAdminStatus = async () => {
-      try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-          throw new Error('Usuario no autenticado');
-        }
-        const { data, error } = await supabase
-          .from('perfiles_usuario')
-          .select('rol')
-          .eq('id', user.id)
-          .single();
-        if (error) throw error;
-        setIsAdmin(data?.rol === 'administrador');
-      } catch (error: any) {
-        console.error('Error al verificar estado de administrador:', error.message);
-        setSnackbar({ open: true, message: `Error al verificar estado de administrador: ${error.message}`, severity: 'error' });
-      }
-    };
+    if (user) {
+      fetchUserRole();
+    }
+  }, [user]);
 
-    checkAdminStatus();
-    fetchClientes();
-    fetchRecordatorios();
-  }, [filtroCompletado]);
+  const fetchUserRole = async () => {
+    try {
+      if (!user) throw new Error('Usuario no autenticado');
+      const { data, error } = await supabase
+        .from('perfiles_usuario')
+        .select('rol')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      setUserRole(data?.rol || null);
+    } catch (error: any) {
+      console.error('Error al obtener rol de usuario:', error.message);
+      setSnackbar({ open: true, message: `Error al obtener rol de usuario: ${error.message}`, severity: 'error' });
+      setUserRole(null);
+    }
+  };
+
+  useEffect(() => {
+    if (user && userRole) {
+      fetchClientes();
+      fetchRecordatorios();
+    }
+  }, [user, userRole, filtroCompletado]);
 
   const fetchClientes = async () => {
     try {
       setLoading(true);
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        throw new Error('Usuario no autenticado');
-      }
+      if (!user) throw new Error('Usuario no autenticado');
 
       let query = supabase
         .from('clientes')
-        .select('id, nombre, telefono')
+        .select('id, nombre, telefono, created_by')
         .order('nombre');
 
-      // Si no es administrador, filtrar por created_by
-      if (!isAdmin) {
+      if (userRole !== 'administrador') {
         query = query.eq('created_by', user.id);
       }
 
@@ -96,7 +101,13 @@ const Recordatorios = () => {
       }
     } catch (error: any) {
       console.error('Error al cargar clientes:', error.message);
-      setSnackbar({ open: true, message: `Error al cargar clientes: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para ver estos clientes'
+          : `Error al cargar clientes: ${error.message}`,
+        severity: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -105,10 +116,7 @@ const Recordatorios = () => {
   const fetchRecordatorios = async () => {
     try {
       setLoading(true);
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        throw new Error('Usuario no autenticado');
-      }
+      if (!user) throw new Error('Usuario no autenticado');
 
       let query = supabase
         .from('recordatorios')
@@ -121,12 +129,13 @@ const Recordatorios = () => {
           completado,
           created_at,
           created_by,
-          clientes (id, nombre, telefono)
+          clientes (id, nombre, telefono, created_by)
         `)
         .order('fecha');
 
-      // Si no es administrador, filtrar por created_by
-      if (!isAdmin) {
+      if (userRole === 'cliente') {
+        query = query.in('cliente_id', clientes.map(c => c.id));
+      } else if (userRole === 'asesor') {
         query = query.eq('created_by', user.id);
       }
 
@@ -149,19 +158,33 @@ const Recordatorios = () => {
           completado: item.completado,
           created_at: item.created_at,
           created_by: item.created_by,
-          cliente: item.clientes, // Ajustado porque la relación devuelve 'clientes'
+          cliente: item.clientes,
         })) || []
       );
     } catch (error: any) {
       console.error('Error al cargar recordatorios:', error.message);
-      setSnackbar({ open: true, message: `Error al cargar recordatorios: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para ver estos recordatorios'
+          : `Error al cargar recordatorios: ${error.message}`,
+        severity: 'error',
+      });
     } finally {
       setLoading(false);
     }
   };
 
   const handleOpenDialog = (recordatorio?: Recordatorio) => {
+    if (userRole === 'cliente' && recordatorio) {
+      setSnackbar({ open: true, message: 'Los clientes no pueden editar recordatorios', severity: 'error' });
+      return;
+    }
     if (recordatorio) {
+      if (userRole === 'asesor' && (!user || recordatorio.created_by !== user.id)) {
+        setSnackbar({ open: true, message: 'No tienes permiso para editar este recordatorio', severity: 'error' });
+        return;
+      }
       setCurrentRecordatorio(recordatorio);
       setIsEditing(true);
     } else {
@@ -181,7 +204,7 @@ const Recordatorios = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setCurrentRecordatorio({ ...currentRecordatorio, [name]: value });
+    setCurrentRecordatorio({ ...currentRecordatorio, [name]: value.slice(0, name === 'titulo' ? 100 : 500) });
   };
 
   const handleClienteChange = (event: SelectChangeEvent<string>) => {
@@ -199,18 +222,27 @@ const Recordatorios = () => {
   };
 
   const handleSaveRecordatorio = async () => {
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
+
+    if (!currentRecordatorio.cliente_id || !currentRecordatorio.titulo || !currentRecordatorio.fecha) {
+      setSnackbar({ open: true, message: 'Cliente, título y fecha son obligatorios', severity: 'error' });
+      return;
+    }
+
+    if (userRole === 'cliente' && !clientes.find(c => c.id === currentRecordatorio.cliente_id && c.created_by === user.id)) {
+      setSnackbar({ open: true, message: 'No tienes permiso para crear/editar recordatorios para este cliente', severity: 'error' });
+      return;
+    }
+
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        throw new Error('Usuario no autenticado');
-      }
-
-      if (!currentRecordatorio.cliente_id || !currentRecordatorio.titulo || !currentRecordatorio.fecha) {
-        setSnackbar({ open: true, message: 'Cliente, título y fecha son obligatorios', severity: 'error' });
-        return;
-      }
-
       if (isEditing && currentRecordatorio.id) {
+        if (userRole === 'asesor' && currentRecordatorio.created_by !== user.id) {
+          setSnackbar({ open: true, message: 'No tienes permiso para editar este recordatorio', severity: 'error' });
+          return;
+        }
         const { error } = await supabase
           .from('recordatorios')
           .update({
@@ -246,11 +278,28 @@ const Recordatorios = () => {
       fetchRecordatorios();
     } catch (error: any) {
       console.error('Error al guardar recordatorio:', error.message);
-      setSnackbar({ open: true, message: `Error al guardar recordatorio: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para guardar este recordatorio'
+          : `Error al guardar recordatorio: ${error.message}`,
+        severity: 'error',
+      });
     }
   };
 
   const handleToggleCompletado = async (id: number, completado: boolean) => {
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
+
+    const recordatorio = recordatorios.find(r => r.id === id);
+    if (userRole === 'cliente' || (userRole === 'asesor' && recordatorio?.created_by !== user.id)) {
+      setSnackbar({ open: true, message: 'No tienes permiso para actualizar este recordatorio', severity: 'error' });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('recordatorios')
@@ -266,24 +315,53 @@ const Recordatorios = () => {
       fetchRecordatorios();
     } catch (error: any) {
       console.error('Error al actualizar recordatorio:', error.message);
-      setSnackbar({ open: true, message: `Error al actualizar recordatorio: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para actualizar este recordatorio'
+          : `Error al actualizar recordatorio: ${error.message}`,
+        severity: 'error',
+      });
     }
   };
 
   const handleDeleteRecordatorio = async (id: number) => {
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
+
+    const recordatorio = recordatorios.find(r => r.id === id);
+    if (userRole === 'cliente' || (userRole === 'asesor' && recordatorio?.created_by !== user.id)) {
+      setSnackbar({ open: true, message: 'No tienes permiso para eliminar este recordatorio', severity: 'error' });
+      return;
+    }
+
     if (window.confirm('¿Estás seguro de que deseas eliminar este recordatorio?')) {
       try {
-        const { error } = await supabase
+        let query = supabase
           .from('recordatorios')
           .delete()
           .eq('id', id);
+
+        if (userRole === 'asesor') {
+          query = query.eq('created_by', user.id);
+        }
+
+        const { error } = await query;
 
         if (error) throw error;
         setSnackbar({ open: true, message: 'Recordatorio eliminado correctamente', severity: 'success' });
         fetchRecordatorios();
       } catch (error: any) {
         console.error('Error al eliminar recordatorio:', error.message);
-        setSnackbar({ open: true, message: `Error al eliminar recordatorio: ${error.message}`, severity: 'error' });
+        setSnackbar({
+          open: true,
+          message: error.message.includes('violates row-level security policy')
+            ? 'No tienes permiso para eliminar este recordatorio'
+            : `Error al eliminar recordatorio: ${error.message}`,
+          severity: 'error',
+        });
       }
     }
   };
@@ -327,6 +405,7 @@ const Recordatorios = () => {
           onClick={() => handleOpenDialog()}
           sx={{ borderRadius: theme.shape.borderRadius, px: 3, py: 1, fontSize: '0.9rem' }}
           aria-label="Crear nuevo recordatorio"
+          disabled={userRole === null}
         >
           Nuevo Recordatorio
         </Button>
@@ -392,6 +471,7 @@ const Recordatorios = () => {
                       color="primary"
                       sx={{ p: 0.5 }}
                       aria-label={`Marcar ${recordatorio.titulo} como ${recordatorio.completado ? 'pendiente' : 'completado'}`}
+                      disabled={userRole === 'cliente' || (userRole === 'asesor' && (!user || recordatorio.created_by !== user?.id))}
                     />
                     <Typography
                       variant="h6"
@@ -429,6 +509,7 @@ const Recordatorios = () => {
                       onClick={() => handleOpenDialog(recordatorio)}
                       sx={{ mr: 1 }}
                       aria-label={`Editar ${recordatorio.titulo}`}
+                      disabled={userRole === 'cliente' || (userRole === 'asesor' && (!user || recordatorio.created_by !== user.id))}
                     >
                       Editar
                     </Button>
@@ -438,6 +519,7 @@ const Recordatorios = () => {
                       startIcon={<DeleteIcon />}
                       onClick={() => handleDeleteRecordatorio(recordatorio.id)}
                       aria-label={`Eliminar ${recordatorio.titulo}`}
+                      disabled={userRole === 'cliente' || (userRole === 'asesor' && (!user || recordatorio.created_by !== user.id))}
                     >
                       Eliminar
                     </Button>
@@ -496,6 +578,7 @@ const Recordatorios = () => {
             value={currentRecordatorio.titulo || ''}
             onChange={handleInputChange}
             required
+            inputProps={{ maxLength: 100 }}
             sx={{ bgcolor: theme.palette.background.paper }}
             aria-label="Título del recordatorio"
           />
@@ -509,6 +592,7 @@ const Recordatorios = () => {
             variant="outlined"
             value={currentRecordatorio.descripcion || ''}
             onChange={handleInputChange}
+            inputProps={{ maxLength: 500 }}
             sx={{ bgcolor: theme.palette.background.paper }}
             aria-label="Descripción del recordatorio"
           />
@@ -517,6 +601,7 @@ const Recordatorios = () => {
               label="Fecha y hora"
               value={currentRecordatorio.fecha ? new Date(currentRecordatorio.fecha) : null}
               onChange={handleDateChange}
+              minDate={new Date()}
               sx={{ mt: 2, width: '100%', bgcolor: theme.palette.background.paper }}
               slotProps={{
                 textField: {
@@ -526,7 +611,7 @@ const Recordatorios = () => {
               }}
             />
           </LocalizationProvider>
-          {isEditing && (
+          {isEditing && userRole !== 'cliente' && (
             <Box sx={{ mt: 2, display: 'flex', alignItems: 'center' }}>
               <Checkbox
                 checked={currentRecordatorio.completado || false}

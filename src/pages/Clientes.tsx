@@ -81,7 +81,7 @@ const Clientes = () => {
     } catch (error: any) {
       console.error('Error al obtener rol de usuario:', error.message);
       setSnackbar({ open: true, message: `Error al obtener rol de usuario: ${error.message}`, severity: 'error' });
-      setUserRole(null); // Fallback to null to avoid blocking fetchClientes
+      setUserRole(null);
     }
   };
 
@@ -98,7 +98,6 @@ const Clientes = () => {
         .from('clientes')
         .select('*');
 
-      // Filter by created_by for non-admin users
       if (user && userRole !== 'administrador') {
         query = query.eq('created_by', user.id);
       }
@@ -174,6 +173,21 @@ const Clientes = () => {
       return;
     }
 
+    // Validaciones
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (currentCliente.email && !emailRegex.test(currentCliente.email)) {
+      setSnackbar({ open: true, message: 'Formato de email inválido', severity: 'error' });
+      return;
+    }
+    if (currentCliente.telefono && !/^\+?\d{9,15}$/.test(currentCliente.telefono)) {
+      setSnackbar({ open: true, message: 'Formato de teléfono inválido (ej: +51987654321)', severity: 'error' });
+      return;
+    }
+    if (currentCliente.ruc && !/^\d{11}$/.test(currentCliente.ruc)) {
+      setSnackbar({ open: true, message: 'El RUC debe tener 11 dígitos', severity: 'error' });
+      return;
+    }
+
     try {
       const clienteData = {
         id: isEditing ? currentCliente.id : crypto.randomUUID(),
@@ -191,11 +205,16 @@ const Clientes = () => {
       };
 
       if (isEditing && currentCliente.id) {
-        const { error } = await supabase
+        let query = supabase
           .from('clientes')
           .update(clienteData)
-          .eq('id', currentCliente.id)
-          .eq('created_by', user.id);
+          .eq('id', currentCliente.id);
+
+        if (userRole !== 'administrador') {
+          query = query.eq('created_by', user.id);
+        }
+
+        const { error } = await query;
 
         if (error) throw error;
         setSnackbar({ open: true, message: 'Cliente actualizado correctamente', severity: 'success' });
@@ -212,7 +231,13 @@ const Clientes = () => {
       fetchClientes();
     } catch (error: any) {
       console.error('Error al guardar cliente:', error.message);
-      setSnackbar({ open: true, message: `Error al guardar cliente: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para realizar esta acción'
+          : `Error al guardar cliente: ${error.message}`,
+        severity: 'error',
+      });
     }
   };
 
@@ -250,6 +275,10 @@ const Clientes = () => {
         throw new Error('Los encabezados del archivo Excel no coinciden. Descarga el archivo de ejemplo para verificar el formato.');
       }
 
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const telefonoRegex = /^\+?\d{9,15}$/;
+      const rucRegex = /^\d{11}$/;
+
       const clientesData: Partial<Cliente>[] = (jsonData.slice(1) as any[][]).map((row) => {
         const rowData = row.reduce((acc, value, i) => {
           acc[headers[i]] = value === undefined || value === '' ? null : value;
@@ -268,6 +297,17 @@ const Clientes = () => {
           }
           return isNaN(parsedDate.getTime()) ? null : parsedDate.toISOString();
         };
+
+        // Validaciones
+        if (rowData.email && !emailRegex.test(rowData.email)) {
+          throw new Error(`Formato de email inválido en fila: ${rowData.nombre || 'sin nombre'}`);
+        }
+        if (rowData.telefono && !telefonoRegex.test(rowData.telefono)) {
+          throw new Error(`Formato de teléfono inválido en fila: ${rowData.nombre || 'sin nombre'}`);
+        }
+        if (rowData.ruc && !rucRegex.test(rowData.ruc)) {
+          throw new Error(`RUC inválido en fila: ${rowData.nombre || 'sin nombre'}`);
+        }
 
         return {
           id: crypto.randomUUID(),
@@ -319,6 +359,11 @@ const Clientes = () => {
       return;
     }
 
+    if (userRole === 'cliente') {
+      setSnackbar({ open: true, message: 'Los clientes no pueden eliminar registros', severity: 'error' });
+      return;
+    }
+
     if (window.confirm('¿Estás seguro de que deseas eliminar este cliente?')) {
       try {
         let query = supabase
@@ -332,12 +377,19 @@ const Clientes = () => {
 
         const { error } = await query;
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error al eliminar cliente:', error);
+          throw new Error(
+            error.message.includes('violates row-level security policy')
+              ? 'No tienes permiso para eliminar este cliente'
+              : `Error al eliminar cliente: ${error.message}`
+          );
+        }
         setSnackbar({ open: true, message: 'Cliente eliminado correctamente', severity: 'success' });
         fetchClientes();
       } catch (error: any) {
         console.error('Error al eliminar cliente:', error.message);
-        setSnackbar({ open: true, message: `Error al eliminar cliente: ${error.message}`, severity: 'error' });
+        setSnackbar({ open: true, message: error.message, severity: 'error' });
       }
     }
   };
@@ -484,6 +536,7 @@ const Clientes = () => {
                     color="error"
                     onClick={() => handleDeleteCliente(cliente.id)}
                     sx={{ '&:hover': { bgcolor: theme.palette.error.light, color: '#fff' } }}
+                    disabled={userRole === 'cliente'}
                   >
                     <DeleteIcon fontSize="small" />
                   </IconButton>
@@ -648,6 +701,7 @@ const Clientes = () => {
             startIcon={<AddIcon />}
             onClick={() => handleOpenDialog()}
             sx={{ borderRadius: 2, px: 3, py: 1 }}
+            disabled={userRole === null}
           >
             Nuevo Cliente
           </Button>
@@ -657,6 +711,7 @@ const Clientes = () => {
             startIcon={<UploadIcon />}
             onClick={handleOpenImportDialog}
             sx={{ borderRadius: 2, px: 3, py: 1 }}
+            disabled={userRole === null || userRole === 'cliente'}
           >
             Importar Clientes
           </Button>
@@ -988,7 +1043,7 @@ const Clientes = () => {
                 <li><strong>nombre</strong>: Nombre del cliente (opcional)</li>
                 <li><strong>telefono</strong>: Teléfono con código de país, ej: +51987654321 (opcional)</li>
                 <li><strong>email</strong>: Correo electrónico (opcional)</li>
-                <li><strong>ruc</strong>: RUC de la empresa (opcional)</li>
+                <li><strong>ruc</strong>: RUC de la empresa, 11 dígitos (opcional)</li>
                 <li><strong>razon_social</strong>: Razón social de la empresa (opcional)</li>
                 <li><strong>representante</strong>: Nombre del representante legal (opcional)</li>
                 <li><strong>notas</strong>: Notas adicionales (opcional)</li>

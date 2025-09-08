@@ -3,7 +3,7 @@ import {
   Container, Typography, Paper, Box, Button, TextField, Dialog, DialogActions,
   DialogContent, DialogTitle, Snackbar, Alert, List, ListItem,
   ListItemText, ListItemAvatar, Avatar, Divider, FormControl, InputLabel, Select,
-  MenuItem, IconButton, Skeleton, InputAdornment, Fade, type TextFieldProps, Checkbox, FormControlLabel,
+  MenuItem, IconButton, Skeleton, InputAdornment, Fade, Checkbox, FormControlLabel,
   CircularProgress, Chip,
 } from '@mui/material';
 import { Send as SendIcon, PersonAdd as PersonAddIcon, Delete as DeleteIcon, Schedule as ScheduleIcon, AttachFile as AttachFileIcon } from '@mui/icons-material';
@@ -13,12 +13,14 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { es } from 'date-fns/locale';
 import { supabase } from '../services/supabase';
+import { useAuth } from '../context/AuthContext';
 
 type Cliente = {
   id: string;
   nombre: string | null;
   telefono: string | null;
   razon_social: string | null;
+  created_by: string | null;
 };
 
 type Mensaje = {
@@ -27,11 +29,13 @@ type Mensaje = {
   contenido: string;
   tipo: 'enviado' | 'recibido';
   created_at: string;
+  created_by: string | null;
   file_url?: string | null;
   cliente?: Cliente;
 };
 
 const Mensajes = () => {
+  const { user } = useAuth();
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [selectedClientes, setSelectedClientes] = useState<string[]>([]);
@@ -48,14 +52,40 @@ const Mensajes = () => {
   const [openScheduleDialog, setOpenScheduleDialog] = useState(false);
   const [scheduledDate, setScheduledDate] = useState<Date | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' });
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchClientes();
-  }, []);
+    if (user) {
+      fetchUserRole();
+    }
+  }, [user]);
+
+  const fetchUserRole = async () => {
+    try {
+      if (!user) throw new Error('Usuario no autenticado');
+      const { data, error } = await supabase
+        .from('perfiles_usuario')
+        .select('rol')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+      setUserRole(data?.rol || null);
+    } catch (error: any) {
+      console.error('Error al obtener rol de usuario:', error.message);
+      setSnackbar({ open: true, message: `Error al obtener rol de usuario: ${error.message}`, severity: 'error' });
+      setUserRole(null);
+    }
+  };
+
+  useEffect(() => {
+    if (user && userRole) {
+      fetchClientes();
+    }
+  }, [user, userRole]);
 
   useEffect(() => {
     if (selectedClientes.length === 1 && isValidUUID(selectedClientes[0])) {
-      console.log('Fetching mensajes for cliente_id:', selectedClientes[0]);
       fetchMensajes(selectedClientes[0]);
     } else {
       setMensajes([]);
@@ -71,16 +101,18 @@ const Mensajes = () => {
   const fetchClientes = async () => {
     try {
       setLoading(true);
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        throw new Error('Usuario no autenticado');
+      if (!user) throw new Error('Usuario no autenticado');
+
+      let query = supabase
+        .from('clientes')
+        .select('id, nombre, telefono, razon_social, created_by')
+        .order('created_at', { ascending: false });
+
+      if (userRole !== 'administrador') {
+        query = query.eq('created_by', user.id);
       }
 
-      const { data, error } = await supabase
-        .from('clientes')
-        .select('id, nombre, telefono, razon_social')
-        .eq('created_by', user.id) // Filtrar explícitamente por created_by
-        .order('created_at', { ascending: false });
+      const { data, error } = await query;
 
       if (error) throw error;
       console.log('Clientes obtenidos para usuario', user.id, ':', data);
@@ -99,7 +131,7 @@ const Mensajes = () => {
   const fetchMensajes = async (clienteId: string) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('mensajes')
         .select(`
           id,
@@ -107,11 +139,17 @@ const Mensajes = () => {
           contenido,
           tipo,
           created_at,
+          created_by,
           file_url,
-          clientes!mensajes_cliente_id_fkey (id, nombre, telefono, razon_social)
+          clientes!mensajes_cliente_id_fkey (id, nombre, telefono, razon_social, created_by)
         `)
-        .eq('cliente_id', clienteId)
-        .order('created_at', { ascending: true });
+        .eq('cliente_id', clienteId);
+
+      if (userRole === 'cliente' && user) {
+        query = query.eq('clientes.created_by', user.id);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: true });
 
       if (error) throw error;
       const mensajesMapped = data?.map((item) => ({
@@ -120,6 +158,7 @@ const Mensajes = () => {
         contenido: item.contenido,
         tipo: item.tipo,
         created_at: item.created_at,
+        created_by: item.created_by,
         file_url: item.file_url,
         cliente: item.clientes && item.clientes.length > 0 ? item.clientes[0] : undefined,
       })) || [];
@@ -127,7 +166,13 @@ const Mensajes = () => {
       setMensajes(mensajesMapped);
     } catch (error: any) {
       console.error('Error al cargar mensajes:', error.message);
-      setSnackbar({ open: true, message: `Error al cargar mensajes: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para ver estos mensajes'
+          : `Error al cargar mensajes: ${error.message}`,
+        severity: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -154,11 +199,10 @@ const Mensajes = () => {
     const files = event.target.files;
     if (files) {
       const validFiles = Array.from(files).filter(file => 
-        file.type === 'application/pdf' || 
-        file.type.startsWith('image/')
+        (file.type === 'application/pdf' || file.type.startsWith('image/')) && file.size <= 5 * 1024 * 1024 // 5MB max
       );
       if (validFiles.length < files.length) {
-        setSnackbar({ open: true, message: 'Solo se permiten archivos PDF e imágenes', severity: 'warning' });
+        setSnackbar({ open: true, message: 'Solo se permiten archivos PDF o imágenes de hasta 5MB', severity: 'warning' });
       }
       setSelectedFiles(validFiles);
     }
@@ -206,18 +250,25 @@ const Mensajes = () => {
   };
 
   const handleAddCliente = async () => {
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        throw new Error('Usuario no autenticado');
-      }
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
 
+    // Validaciones
+    const telefonoRegex = /^\+?\d{9,15}$/;
+    if (nuevoClienteTelefono && !telefonoRegex.test(nuevoClienteTelefono)) {
+      setSnackbar({ open: true, message: 'Formato de teléfono inválido (ej: +51987654321)', severity: 'error' });
+      return;
+    }
+
+    try {
       const clienteData = {
         id: crypto.randomUUID(),
         nombre: nuevoClienteNombre.trim() || null,
         telefono: nuevoClienteTelefono.trim() || null,
         razon_social: nuevoClienteRazonSocial.trim() || null,
-        created_by: user.id, // Añadir created_by
+        created_by: user.id,
       };
 
       const { error } = await supabase
@@ -230,7 +281,13 @@ const Mensajes = () => {
       fetchClientes();
     } catch (error: any) {
       console.error('Error al agregar cliente:', error.message);
-      setSnackbar({ open: true, message: `Error al agregar cliente: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para agregar clientes'
+          : `Error al agregar cliente: ${error.message}`,
+        severity: 'error',
+      });
     }
   };
 
@@ -279,6 +336,16 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
       return;
     }
 
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
+
+    if (userRole === 'cliente' && selectedClientes.some(id => !clientes.find(c => c.id === id && c.created_by === user.id))) {
+      setSnackbar({ open: true, message: 'No tienes permiso para enviar mensajes a estos clientes', severity: 'error' });
+      return;
+    }
+
     try {
       let fileUrls: string[] = [];
       if (selectedFiles.length > 0) {
@@ -297,6 +364,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
             cliente_id: clienteId,
             contenido,
             tipo: 'enviado',
+            created_by: user.id,
             file_url: fileUrls.length > 0 ? fileUrls[0] : null,
           };
         });
@@ -338,13 +406,29 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
       }
     } catch (error: any) {
       console.error('Error al enviar mensajes:', error.message);
-      setSnackbar({ open: true, message: `Error al enviar mensajes: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para enviar mensajes a estos clientes'
+          : `Error al enviar mensajes: ${error.message}`,
+        severity: 'error',
+      });
     }
   };
 
   const handleScheduleMessage = async () => {
     if (selectedClientes.length === 0 || (!nuevoMensaje.trim() && selectedFiles.length === 0) || !scheduledDate) {
       setSnackbar({ open: true, message: 'Selecciona al menos un cliente, escribe un mensaje o adjunta un archivo, y selecciona una fecha/hora', severity: 'error' });
+      return;
+    }
+
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
+
+    if (userRole === 'cliente' && selectedClientes.some(id => !clientes.find(c => c.id === id && c.created_by === user.id))) {
+      setSnackbar({ open: true, message: 'No tienes permiso para programar mensajes para estos clientes', severity: 'error' });
       return;
     }
 
@@ -366,6 +450,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
             cliente_id: clienteId,
             contenido,
             scheduled_at: scheduledDate.toISOString(),
+            created_by: user.id,
             file_url: fileUrls.length > 0 ? fileUrls[0] : null,
           };
         });
@@ -383,13 +468,29 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
       setSnackbar({ open: true, message: `Mensajes programados correctamente para ${selectedClientes.length} cliente(s)`, severity: 'success' });
     } catch (error: any) {
       console.error('Error al programar mensajes:', error.message);
-      setSnackbar({ open: true, message: `Error al programar mensajes: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para programar mensajes'
+          : `Error al programar mensajes: ${error.message}`,
+        severity: 'error',
+      });
     }
   };
 
   const handleRegistrarMensajeRecibido = async () => {
     if (selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0]) || (!nuevoMensaje.trim() && selectedFiles.length === 0)) {
       setSnackbar({ open: true, message: 'Selecciona exactamente un cliente válido y escribe un mensaje o adjunta un archivo', severity: 'error' });
+      return;
+    }
+
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
+
+    if (userRole === 'cliente' && !clientes.find(c => c.id === selectedClientes[0] && c.created_by === user.id)) {
+      setSnackbar({ open: true, message: 'No tienes permiso para registrar mensajes para este cliente', severity: 'error' });
       return;
     }
 
@@ -408,6 +509,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
             cliente_id: selectedClientes[0],
             contenido,
             tipo: 'recibido',
+            created_by: user.id,
             file_url: fileUrls.length > 0 ? fileUrls[0] : null,
           },
         ]);
@@ -420,11 +522,27 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
       fetchMensajes(selectedClientes[0]);
     } catch (error: any) {
       console.error('Error al registrar mensaje recibido:', error.message);
-      setSnackbar({ open: true, message: `Error al registrar mensaje: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para registrar mensajes'
+          : `Error al registrar mensaje: ${error.message}`,
+        severity: 'error',
+      });
     }
   };
 
   const handleDeleteMensaje = async (id: string) => {
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
+
+    if (userRole === 'cliente') {
+      setSnackbar({ open: true, message: 'Los clientes no pueden eliminar mensajes', severity: 'error' });
+      return;
+    }
+
     try {
       const mensaje = mensajes.find(m => m.id === id);
       if (mensaje?.file_url) {
@@ -434,17 +552,29 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
         }
       }
 
-      const { error } = await supabase
+      let query = supabase
         .from('mensajes')
         .delete()
         .eq('id', id);
+
+      if (userRole !== 'administrador') {
+        query = query.eq('created_by', user.id);
+      }
+
+      const { error } = await query;
 
       if (error) throw error;
       setSnackbar({ open: true, message: 'Mensaje eliminado correctamente', severity: 'success' });
       fetchMensajes(selectedClientes[0]);
     } catch (error: any) {
       console.error('Error al eliminar mensaje:', error.message);
-      setSnackbar({ open: true, message: `Error al eliminar mensaje: ${error.message}`, severity: 'error' });
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para eliminar este mensaje'
+          : `Error al eliminar mensaje: ${error.message}`,
+        severity: 'error',
+      });
     } finally {
       setOpenDeleteDialog(null);
     }
@@ -502,6 +632,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
               onChange={handleSelectAllChange}
               color="primary"
               aria-label="Seleccionar todos los clientes"
+              disabled={userRole === 'cliente' || clientes.length === 0}
             />
           }
           label="Seleccionar todos los clientes"
@@ -592,6 +723,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
                           aria-label={`Eliminar mensaje ${mensaje.contenido}`}
                           onClick={() => setOpenDeleteDialog(mensaje.id)}
                           sx={{ color: 'error.main' }}
+                          disabled={userRole === 'cliente' || (userRole === 'asesor' && (!user || mensaje.created_by !== user.id))}
                         >
                           <DeleteIcon />
                         </IconButton>
@@ -755,7 +887,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
                 color="primary"
                 startIcon={<ScheduleIcon />}
                 onClick={() => setOpenScheduleDialog(true)}
-                disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length === 0 || uploadingFiles}
+                disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length === 0 || uploadingFiles || userRole === 'cliente'}
                 aria-label="Programar mensaje"
                 sx={{ textTransform: 'none', fontWeight: 600 }}
               >
@@ -788,6 +920,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
             onClick={handleOpenDialog}
             sx={{ mt: 2, textTransform: 'none', fontWeight: 600 }}
             aria-label="Agregar nuevo cliente"
+            disabled={userRole === null}
           >
             Agregar Nuevo Cliente
           </Button>
@@ -818,7 +951,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
             onChange={(e) => setNuevoClienteTelefono(e.target.value)}
             sx={{ mt: 2 }}
             aria-label="Teléfono del cliente"
-            inputProps={{ pattern: '[0-9]*' }}
+            inputProps={{ pattern: '[0-9+]*' }}
             helperText="Incluye el código de país (ej: +51987654321)"
           />
           <TextField
@@ -868,7 +1001,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
               minDate={new Date()}
               sx={{ mt: 2, width: '100%' }}
               slotProps={{
-                textField: { variant: 'outlined', ariaLabel: 'Seleccionar fecha y hora' } as Partial<TextFieldProps>,
+                textField: { variant: 'outlined', 'aria-label': 'Seleccionar fecha y hora' },
               }}
             />
           </LocalizationProvider>

@@ -25,31 +25,36 @@ type Usuario = {
   rol: 'administrador' | 'asesor' | 'cliente' | null;
   telefono: string | null;
   created_at: string;
-  password?: string;
 };
 
 const Usuarios = () => {
   const theme = useTheme();
+  const { user } = useAuth();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
-  const [currentUsuario, setCurrentUsuario] = useState<Partial<Usuario>>({});
+  const [currentUsuario, setCurrentUsuario] = useState<Partial<Usuario> & { password?: string }>({});
   const [isEditing, setIsEditing] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const { user } = useAuth();
-  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      setLoading(false);
+      return;
+    }
+    console.log('Usuario autenticado:', user.id);
     fetchUserRole();
-    fetchUsuarios();
-  }, []);
+  }, [user]);
 
   const fetchUserRole = async () => {
-    if (!user) return;
-
     try {
+      if (!user) {
+        throw new Error('Usuario no autenticado');
+      }
       const { data, error } = await supabase
         .from('perfiles_usuario')
         .select('rol')
@@ -57,11 +62,23 @@ const Usuarios = () => {
         .single();
 
       if (error) throw error;
+      console.log('Rol del usuario:', data?.rol);
       setUserRole(data?.rol || null);
     } catch (error: any) {
       console.error('Error al obtener rol de usuario:', error.message);
+      setSnackbar({ open: true, message: `Error al obtener rol de usuario: ${error.message}`, severity: 'error' });
+      setUserRole(null);
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (userRole === 'administrador') {
+      fetchUsuarios();
+    } else {
+      setLoading(false);
+    }
+  }, [userRole]);
 
   const fetchUsuarios = async () => {
     try {
@@ -75,24 +92,39 @@ const Usuarios = () => {
           email: item.email,
           nombre: item.nombre || null,
           apellido: item.apellido || null,
-          rol: item.rol || 'cliente', // Fallback a 'cliente' si rol es null
+          rol: item.rol || 'cliente',
           telefono: item.telefono || null,
           created_at: item.created_at,
         })) || []
       );
     } catch (error: any) {
-      console.error('Error al cargar usuarios:', error);
-      setSnackbar({ open: true, message: `Error al cargar usuarios: ${error.message}`, severity: 'error' });
+      console.error('Error al cargar usuarios:', error.message);
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy') || error.message.includes('Solo los administradores')
+          ? 'No tienes permiso para ver los usuarios'
+          : `Error al cargar usuarios: ${error.message}`,
+        severity: 'error',
+      });
     } finally {
       setLoading(false);
     }
   };
 
   const handleOpenDialog = (usuario?: Usuario) => {
+    if (!user || userRole !== 'administrador') {
+      setSnackbar({ open: true, message: 'No tienes permiso para realizar esta acción', severity: 'error' });
+      return;
+    }
     if (usuario) {
+      console.log('Abriendo diálogo para editar usuario:', usuario);
       setCurrentUsuario({
-        ...usuario,
-        password: '', // Inicializa password como cadena vacía para edición
+        id: usuario.id,
+        email: usuario.email,
+        nombre: usuario.nombre,
+        apellido: usuario.apellido,
+        rol: usuario.rol,
+        telefono: usuario.telefono,
       });
       setIsEditing(true);
     } else {
@@ -116,7 +148,14 @@ const Usuarios = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setCurrentUsuario({ ...currentUsuario, [name]: value || null }); // Maneja null para campos opcionales
+    if (name === 'telefono' && value && !/^\+?\d{0,15}$/.test(value)) {
+      setSnackbar({ open: true, message: 'Teléfono debe contener solo números y un máximo de 15 dígitos', severity: 'error' });
+      return;
+    }
+    setCurrentUsuario({
+      ...currentUsuario,
+      [name]: value.slice(0, name === 'nombre' || name === 'apellido' ? 50 : name === 'email' ? 255 : name === 'password' ? 128 : 15) || null,
+    });
   };
 
   const handleRoleChange = (event: SelectChangeEvent) => {
@@ -127,28 +166,34 @@ const Usuarios = () => {
   };
 
   const handleSaveUsuario = async () => {
+    if (!user || userRole !== 'administrador') {
+      setSnackbar({ open: true, message: 'No tienes permiso para realizar esta acción', severity: 'error' });
+      return;
+    }
+
+    if (!currentUsuario.email || !currentUsuario.rol) {
+      setSnackbar({ open: true, message: 'Email y rol son obligatorios', severity: 'error' });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(currentUsuario.email)) {
+      setSnackbar({ open: true, message: 'Formato de email inválido', severity: 'error' });
+      return;
+    }
+
+    if (!isEditing && (!currentUsuario.password || currentUsuario.password.length < 8 || !/[A-Z]/.test(currentUsuario.password) || !/[0-9]/.test(currentUsuario.password))) {
+      setSnackbar({
+        open: true,
+        message: 'La contraseña debe tener al menos 8 caracteres, incluyendo una mayúscula y un número',
+        severity: 'error',
+      });
+      return;
+    }
+
     try {
-      if (!currentUsuario.email || !currentUsuario.rol) {
-        setSnackbar({ open: true, message: 'Email y rol son obligatorios', severity: 'error' });
-        return;
-      }
-
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(currentUsuario.email)) {
-        setSnackbar({ open: true, message: 'Formato de email inválido', severity: 'error' });
-        return;
-      }
-
-      if (!isEditing && (!currentUsuario.password || currentUsuario.password.length < 6)) {
-        setSnackbar({
-          open: true,
-          message: 'La contraseña es obligatoria y debe tener al menos 6 caracteres',
-          severity: 'error',
-        });
-        return;
-      }
-
       if (isEditing) {
+        console.log('Actualizando usuario:', currentUsuario);
         const { error } = await supabase.rpc('actualizar_usuario', {
           usuario_id: currentUsuario.id,
           nuevo_nombre: currentUsuario.nombre || null,
@@ -157,41 +202,33 @@ const Usuarios = () => {
           nuevo_telefono: currentUsuario.telefono || null,
         });
 
-        if (error) throw new Error(`Error al actualizar usuario: ${error.message}`);
+        if (error) {
+          console.error('Error en RPC actualizar_usuario:', error);
+          throw error;
+        }
         setSnackbar({ open: true, message: 'Usuario actualizado correctamente', severity: 'success' });
       } else {
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: currentUsuario.email,
-          password: currentUsuario.password || '',
-          options: {
-            data: {
-              nombre: currentUsuario.nombre || null,
-              apellido: currentUsuario.apellido || null,
-              telefono: currentUsuario.telefono || null,
-            },
-          },
+        console.log('Creando usuario:', currentUsuario);
+        const response = await fetch('http://localhost:3000/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user,
+            email: currentUsuario.email,
+            password: currentUsuario.password,
+            nombre: currentUsuario.nombre,
+            apellido: currentUsuario.apellido,
+            rol: currentUsuario.rol,
+            telefono: currentUsuario.telefono,
+          }),
         });
 
-        if (authError) {
-          console.error('Error en signUp:', authError);
-          throw new Error(authError.message);
-        }
-
-        if (!authData.user) {
-          throw new Error('No se pudo crear el usuario');
-        }
-
-        const { error: rpcError } = await supabase.rpc('crear_usuario_con_rol', {
-          email: currentUsuario.email,
-          nombre: currentUsuario.nombre || null,
-          apellido: currentUsuario.apellido || null,
-          rol: currentUsuario.rol,
-          telefono: currentUsuario.telefono || null,
-        });
-
-        if (rpcError) {
-          console.error('Error en crear_usuario_con_rol:', rpcError);
-          throw new Error(`Error al crear perfil: ${rpcError.message}`);
+        if (!response.ok) {
+          const errorData = await response.json();
+          if (errorData.error.includes('already registered')) {
+            setSnackbar({ open: true, message: 'El email ya está registrado', severity: 'error' });
+          }
+          throw new Error(errorData.error);
         }
 
         setSnackbar({ open: true, message: 'Usuario creado correctamente', severity: 'success' });
@@ -200,26 +237,50 @@ const Usuarios = () => {
       handleCloseDialog();
       fetchUsuarios();
     } catch (error: any) {
-      console.error('Error al guardar usuario:', error);
+      console.error('Error al guardar usuario:', error.message);
       setSnackbar({
         open: true,
-        message: `Error al guardar usuario: ${error.message}`,
+        message: error.message.includes('violates row-level security policy') || error.message.includes('Solo los administradores')
+          ? 'No tienes permiso para guardar este usuario'
+          : `Error al guardar usuario: ${error.message}`,
         severity: 'error',
       });
     }
   };
 
   const handleDeleteUsuario = async (id: string) => {
+    if (!user || userRole !== 'administrador') {
+      setSnackbar({ open: true, message: 'No tienes permiso para realizar esta acción', severity: 'error' });
+      return;
+    }
+
+    if (id === user.id) {
+      setSnackbar({ open: true, message: 'No puedes eliminar tu propio usuario', severity: 'error' });
+      return;
+    }
+
     if (window.confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
       try {
-        const { error } = await supabase.rpc('eliminar_usuario', { usuario_id: id });
-
-        if (error) throw error;
+        console.log('Eliminando usuario con ID:', id);
+        const { error: authError } = await supabase.auth.admin.deleteUser(id);
+        if (authError) {
+          console.error('Error en admin.deleteUser:', authError);
+          throw authError;
+        }
+        const { error: rpcError } = await supabase.rpc('eliminar_usuario', { usuario_id: id });
+        if (rpcError) {
+          console.error('Error en RPC eliminar_usuario:', rpcError);
+          throw rpcError;
+        }
         setSnackbar({ open: true, message: 'Usuario eliminado correctamente', severity: 'success' });
         fetchUsuarios();
       } catch (error: any) {
         console.error('Error al eliminar usuario:', error.message);
-        setSnackbar({ open: true, message: `Error al eliminar usuario: ${error.message}`, severity: 'error' });
+        setSnackbar({
+          open: true,
+          message: error.message.includes('User not allowed') ? 'No tienes permisos suficientes para eliminar usuarios (clave de servicio requerida)' : `Error al eliminar usuario: ${error.message}`,
+          severity: 'error',
+        });
       }
     }
   };
@@ -246,7 +307,7 @@ const Usuarios = () => {
     }
   };
 
-  if (userRole !== 'administrador') {
+  if (!user || userRole !== 'administrador') {
     return (
       <Box
         sx={{
@@ -399,6 +460,7 @@ const Usuarios = () => {
                             onClick={() => handleDeleteUsuario(usuario.id)}
                             size="small"
                             aria-label={`Eliminar usuario ${usuario.email}`}
+                            disabled={usuario.id === user.id}
                             sx={{ '&:hover': { bgcolor: theme.palette.error.light, color: '#fff' } }}
                           >
                             <DeleteIcon fontSize="small" />
@@ -443,7 +505,7 @@ const Usuarios = () => {
         </DialogTitle>
         <DialogContent>
           <TextField
-            autoFocus
+            autoFocus={!isEditing}
             margin="normal"
             name="email"
             label="Email"
@@ -453,6 +515,7 @@ const Usuarios = () => {
             value={currentUsuario.email || ''}
             onChange={handleInputChange}
             disabled={isEditing}
+            inputProps={{ maxLength: 255 }}
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             aria-label="Email del usuario"
             required
@@ -467,9 +530,11 @@ const Usuarios = () => {
               variant="outlined"
               value={currentUsuario.password || ''}
               onChange={handleInputChange}
+              inputProps={{ maxLength: 128 }}
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
               aria-label="Contraseña del usuario"
               required
+              helperText="Mínimo 8 caracteres, con al menos una mayúscula y un número"
             />
           )}
           <TextField
@@ -480,6 +545,7 @@ const Usuarios = () => {
             variant="outlined"
             value={currentUsuario.nombre || ''}
             onChange={handleInputChange}
+            inputProps={{ maxLength: 50 }}
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             aria-label="Nombre del usuario"
           />
@@ -491,6 +557,7 @@ const Usuarios = () => {
             variant="outlined"
             value={currentUsuario.apellido || ''}
             onChange={handleInputChange}
+            inputProps={{ maxLength: 50 }}
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             aria-label="Apellido del usuario"
           />
@@ -519,6 +586,7 @@ const Usuarios = () => {
             variant="outlined"
             value={currentUsuario.telefono || ''}
             onChange={handleInputChange}
+            inputProps={{ maxLength: 15 }}
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
             aria-label="Teléfono del usuario"
             helperText="Incluye el código de país (ej: +51987654321)"
