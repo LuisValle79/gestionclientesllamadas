@@ -289,11 +289,11 @@ const fetchUserRole = async () => {
         throw new Error('Los encabezados del archivo Excel no coinciden. Descarga el archivo de ejemplo para verificar el formato.');
       }
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      const telefonoRegex = /^\+?\d{9,15}$/;
-      const rucRegex = /^\d{11}$/;
+     // const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+     // const telefonoRegex = /^\+?\d{9,15}$/;
+     // const rucRegex = /^\d{11}$/;
 
-      const clientesData: Partial<Cliente>[] = (jsonData.slice(1) as any[][]).map((row, index) => {
+      const clientesData: Partial<Cliente>[] = (jsonData.slice(1) as any[][]).map((row) => {
         const rowData = row.reduce((acc, value, i) => {
           acc[headers[i]] = value === undefined || value === '' ? null : value;
           return acc;
@@ -315,15 +315,15 @@ const fetchUserRole = async () => {
         };
 
         // Validaciones
-        if (rowData.email && !emailRegex.test(rowData.email)) {
-          throw new Error(`Formato de email inválido en fila ${index + 2}: ${rowData.nombre || 'sin nombre'}`);
-        }
-        if (rowData.telefono && !telefonoRegex.test(String(rowData.telefono))) {
-          throw new Error(`Formato de teléfono inválido en fila ${index + 2}: ${rowData.nombre || 'sin nombre'}`);
-        }
-        if (rowData.ruc && !rucRegex.test(String(rowData.ruc))) {
-          throw new Error(`RUC inválido en fila ${index + 2}: ${rowData.nombre || 'sin nombre'}`);
-        }
+    //    if (rowData.email && !emailRegex.test(rowData.email)) {
+    //      throw new Error(`Formato de email inválido en fila ${index + 2}: ${rowData.nombre || 'sin nombre'}`);
+    //    }
+    //    if (rowData.telefono && !telefonoRegex.test(String(rowData.telefono))) {
+    //      throw new Error(`Formato de teléfono inválido en fila ${index + 2}: ${rowData.nombre || 'sin nombre'}`);
+    //    }
+      //  if (rowData.ruc && !rucRegex.test(String(rowData.ruc))) {
+        //  throw new Error(`RUC inválido en fila ${index + 2}: ${rowData.nombre || 'sin nombre'}`);
+        //}
 
         return {
           nombre: rowData.nombre ? String(rowData.nombre) : null,
