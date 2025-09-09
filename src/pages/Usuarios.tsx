@@ -17,6 +17,12 @@ import {
 import { supabase } from '../services/supabase';
 import { useAuth } from '../context/AuthContext';
 
+// ADVERTENCIA: Las operaciones supabase.auth.admin.createUser y supabase.auth.admin.deleteUser
+// requieren la clave service_role y NO deben realizarse en el frontend por seguridad.
+// Estas operaciones deben moverse a un backend seguro (por ejemplo, una función de borde en Supabase
+// o un servidor Node.js con la clave service_role). Mantengo las funciones en el frontend por compatibilidad
+// con el código original, pero considera implementar un backend para estas acciones.
+
 type Usuario = {
   id: string;
   email: string;
@@ -36,7 +42,8 @@ const Usuarios = () => {
   const [currentUsuario, setCurrentUsuario] = useState<Partial<Usuario> & { password?: string }>({});
   const [isEditing, setIsEditing] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' });
+
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -46,31 +53,48 @@ const Usuarios = () => {
       setLoading(false);
       return;
     }
-    console.log('Usuario autenticado:', user.id);
     fetchUserRole();
   }, [user]);
 
-  const fetchUserRole = async () => {
-    try {
-      if (!user) {
-        throw new Error('Usuario no autenticado');
-      }
-      const { data, error } = await supabase
-        .from('perfiles_usuario')
-        .select('rol')
-        .eq('id', user.id)
-        .single();
+const fetchUserRole = async () => {
+  try {
+    if (!user) throw new Error('Usuario no autenticado');
+    console.log('ID del usuario:', user.id);
+    const { data, error } = await supabase
+      .from('perfiles_usuario')
+      .select('rol')
+      .eq('id', user.id)
+      .maybeSingle();
 
-      if (error) throw error;
-      console.log('Rol del usuario:', data?.rol);
-      setUserRole(data?.rol || null);
-    } catch (error: any) {
-      console.error('Error al obtener rol de usuario:', error.message);
-      setSnackbar({ open: true, message: `Error al obtener rol de usuario: ${error.message}`, severity: 'error' });
-      setUserRole(null);
-      setLoading(false);
+    if (error) {
+      console.error('Error en la consulta de perfil:', JSON.stringify(error, null, 2));
+      throw error;
     }
-  };
+
+    if (data && data.rol) {
+      console.log('Rol encontrado:', data.rol);
+      setUserRole(data.rol);
+    } else {
+      console.warn('Perfil no encontrado para el usuario:', user.id);
+      setUserRole(null);
+      setSnackbar({
+        open: true,
+        message: 'Perfil no encontrado. Contacta al administrador para asignar un rol.',
+        severity: 'error',
+      });
+    }
+  } catch (error: any) {
+    console.error('Error al obtener rol de usuario:', JSON.stringify(error, null, 2));
+    setSnackbar({
+      open: true,
+      message: `Error al obtener rol: ${error.message}`,
+      severity: 'error',
+    });
+    setUserRole(null);
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     if (userRole === 'administrador') {
@@ -80,36 +104,50 @@ const Usuarios = () => {
     }
   }, [userRole]);
 
-  const fetchUsuarios = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase.rpc('get_usuarios_con_perfiles');
-      if (error) throw error;
-      console.log('Usuarios obtenidos:', data);
-      setUsuarios(
-        data?.map((item: any) => ({
-          id: item.id,
-          email: item.email,
-          nombre: item.nombre || null,
-          apellido: item.apellido || null,
-          rol: item.rol || 'cliente',
-          telefono: item.telefono || null,
-          created_at: item.created_at,
-        })) || []
-      );
-    } catch (error: any) {
-      console.error('Error al cargar usuarios:', error.message);
+const fetchUsuarios = async () => {
+  try {
+    setLoading(true);
+    if (!user) {
+      console.error('Usuario no autenticado');
+      setLoading(false);
       setSnackbar({
         open: true,
-        message: error.message.includes('violates row-level security policy') || error.message.includes('Solo los administradores')
-          ? 'No tienes permiso para ver los usuarios'
-          : `Error al cargar usuarios: ${error.message}`,
+        message: 'Usuario no autenticado',
         severity: 'error',
       });
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
+    console.log('Ejecutando get_usuarios_con_perfiles para usuario:', user.id);
+    const { data, error } = await supabase.rpc('get_usuarios_con_perfiles');
+    if (error) {
+      console.error('Error en get_usuarios_con_perfiles:', JSON.stringify(error, null, 2));
+      throw error;
+    }
+    console.log('Datos recibidos:', JSON.stringify(data, null, 2));
+    setUsuarios(
+      data?.map((item: any) => ({
+        id: item.id,
+        email: item.email,
+        nombre: item.nombre || null,
+        apellido: item.apellido || null,
+        rol: item.rol || 'cliente',
+        telefono: item.telefono || null,
+        created_at: item.created_at,
+      })) || []
+    );
+  } catch (error: any) {
+    console.error('Error al cargar usuarios:', JSON.stringify(error, null, 2));
+    setSnackbar({
+      open: true,
+      message: error.message.includes('violates row-level security policy') || error.message.includes('Solo los administradores')
+        ? 'No tienes permiso para ver los usuarios'
+        : `Error al cargar usuarios: ${error.message}`,
+      severity: 'error',
+    });
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleOpenDialog = (usuario?: Usuario) => {
     if (!user || userRole !== 'administrador') {
@@ -117,7 +155,6 @@ const Usuarios = () => {
       return;
     }
     if (usuario) {
-      console.log('Abriendo diálogo para editar usuario:', usuario);
       setCurrentUsuario({
         id: usuario.id,
         email: usuario.email,
@@ -154,7 +191,7 @@ const Usuarios = () => {
     }
     setCurrentUsuario({
       ...currentUsuario,
-      [name]: value.slice(0, name === 'nombre' || name === 'apellido' ? 50 : name === 'email' ? 255 : name === 'password' ? 128 : 15) || null,
+      [name]: value || null,
     });
   };
 
@@ -192,8 +229,7 @@ const Usuarios = () => {
     }
 
     try {
-      if (isEditing) {
-        console.log('Actualizando usuario:', currentUsuario);
+      if (isEditing && currentUsuario.id) {
         const { error } = await supabase.rpc('actualizar_usuario', {
           usuario_id: currentUsuario.id,
           nuevo_nombre: currentUsuario.nombre || null,
@@ -202,42 +238,48 @@ const Usuarios = () => {
           nuevo_telefono: currentUsuario.telefono || null,
         });
 
-        if (error) {
-          console.error('Error en RPC actualizar_usuario:', error);
-          throw error;
-        }
+        if (error) throw error;
         setSnackbar({ open: true, message: 'Usuario actualizado correctamente', severity: 'success' });
       } else {
-        console.log('Creando usuario:', currentUsuario);
-        const response = await fetch('http://localhost:3000/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user,
-            email: currentUsuario.email,
-            password: currentUsuario.password,
-            nombre: currentUsuario.nombre,
-            apellido: currentUsuario.apellido,
-            rol: currentUsuario.rol,
-            telefono: currentUsuario.telefono,
-          }),
+        // ADVERTENCIA: Esta operación debe moverse a un backend con service_role
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          email: currentUsuario.email,
+          password: currentUsuario.password,
+          email_confirm: true,
+          user_metadata: {
+            nombre: currentUsuario.nombre || null,
+            apellido: currentUsuario.apellido || null,
+            telefono: currentUsuario.telefono || null,
+          },
         });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          if (errorData.error.includes('already registered')) {
-            setSnackbar({ open: true, message: 'El email ya está registrado', severity: 'error' });
+        if (authError) {
+          if (authError.message.includes('already registered')) {
+            throw new Error('El email ya está registrado');
           }
-          throw new Error(errorData.error);
+          throw authError;
         }
 
+        if (!authData.user) {
+          throw new Error('No se pudo crear el usuario');
+        }
+
+        const { error: rpcError } = await supabase.rpc('crear_usuario_con_rol', {
+          user_id: authData.user.id,
+          nombre: currentUsuario.nombre || null,
+          apellido: currentUsuario.apellido || null,
+          rol: currentUsuario.rol,
+          telefono: currentUsuario.telefono || null,
+        });
+
+        if (rpcError) throw rpcError;
         setSnackbar({ open: true, message: 'Usuario creado correctamente', severity: 'success' });
       }
 
       handleCloseDialog();
       fetchUsuarios();
     } catch (error: any) {
-      console.error('Error al guardar usuario:', error.message);
+      console.error('Error al guardar usuario:', error);
       setSnackbar({
         open: true,
         message: error.message.includes('violates row-level security policy') || error.message.includes('Solo los administradores')
@@ -261,24 +303,22 @@ const Usuarios = () => {
 
     if (window.confirm('¿Estás seguro de que deseas eliminar este usuario?')) {
       try {
-        console.log('Eliminando usuario con ID:', id);
+        // ADVERTENCIA: Esta operación debe moverse a un backend con service_role
         const { error: authError } = await supabase.auth.admin.deleteUser(id);
-        if (authError) {
-          console.error('Error en admin.deleteUser:', authError);
-          throw authError;
-        }
+        if (authError) throw authError;
+
         const { error: rpcError } = await supabase.rpc('eliminar_usuario', { usuario_id: id });
-        if (rpcError) {
-          console.error('Error en RPC eliminar_usuario:', rpcError);
-          throw rpcError;
-        }
+        if (rpcError) throw rpcError;
+
         setSnackbar({ open: true, message: 'Usuario eliminado correctamente', severity: 'success' });
         fetchUsuarios();
       } catch (error: any) {
-        console.error('Error al eliminar usuario:', error.message);
+        console.error('Error al eliminar usuario:', error);
         setSnackbar({
           open: true,
-          message: error.message.includes('User not allowed') ? 'No tienes permisos suficientes para eliminar usuarios (clave de servicio requerida)' : `Error al eliminar usuario: ${error.message}`,
+          message: error.message.includes('violates row-level security policy') || error.message.includes('Solo los administradores')
+            ? 'No tienes permiso para eliminar este usuario'
+            : `Error al eliminar usuario: ${error.message}`,
           severity: 'error',
         });
       }
@@ -492,6 +532,7 @@ const Usuarios = () => {
           />
         </Paper>
       )}
+
 
       <Dialog
         open={openDialog}

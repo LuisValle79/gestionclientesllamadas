@@ -22,44 +22,58 @@ const Dashboard = () => {
   const { alert, showError, hideAlert } = useAlert();
 
   useEffect(() => {
-const fetchStats = async () => {
-  try {
-    const { count: clientesCount, error: clientesError } = await supabase
-      .from('clientes')
-      .select('*', { count: 'exact', head: true });
+    const fetchStats = async () => {
+      try {
+        // Consulta para contar clientes
+        const { count: clientesCount, error: clientesError } = await supabase
+          .from('clientes')
+          .select('id', { count: 'exact', head: true });
 
-    const fechaLimite = new Date();
-    fechaLimite.setDate(fechaLimite.getDate() - 7);
+        if (clientesError) {
+          console.error('Error en clientes:', clientesError);
+          throw new Error(`Error en clientes: ${clientesError.message}`);
+        }
 
-    const { count: mensajesCount, error: mensajesError } = await supabase
-      .from('mensajes')
-      .select('id, cliente_id, contenido, enviado_por, created_at', { count: 'exact', head: true })
-      .gte('created_at', fechaLimite.toISOString());
+        // Consulta para contar mensajes recientes (últimos 7 días)
+        const fechaLimite = new Date();
+        fechaLimite.setDate(fechaLimite.getDate() - 7);
 
-const { count: recordatoriosCount, error: recordatoriosError } = await supabase
-  .from('recordatorios')
-  .select('id, cliente_id, tipo, fecha, descripcion, completado, created_at, updated_at', { count: 'exact', head: true })
-  .eq('completado', false);
+        const { count: mensajesCount, error: mensajesError } = await supabase
+          .from('mensajes')
+          .select('id', { count: 'exact', head: true })
+          .gte('created_at', fechaLimite.toISOString());
 
-    if (clientesError) throw new Error(`Error en clientes: ${clientesError.message}`);
-    if (mensajesError) throw new Error(`Error en mensajes: ${mensajesError.message}`);
-    if (recordatoriosError) throw new Error(`Error en recordatorios: ${recordatoriosError.message}`);
+        if (mensajesError) {
+          console.error('Error en mensajes:', mensajesError);
+          throw new Error(`Error en mensajes: ${mensajesError.message}`);
+        }
 
-    setStats({
-      totalClientes: clientesCount || 0,
-      mensajesRecientes: mensajesCount || 0,
-      recordatoriosPendientes: recordatoriosCount || 0,
-    });
-  } catch (error: any) {
-    console.error('Error al obtener estadísticas:', error);
-    showError(error.message || 'Error al cargar las estadísticas', 'Error en Dashboard');
-  } finally {
-    setLoading(false);
-  }
-};
+        // Consulta para contar recordatorios pendientes
+        const { count: recordatoriosCount, error: recordatoriosError } = await supabase
+          .from('recordatorios')
+          .select('id', { count: 'exact', head: true })
+          .eq('completado', false);
+
+        if (recordatoriosError) {
+          console.error('Error en recordatorios:', recordatoriosError);
+          throw new Error(`Error en recordatorios: ${recordatoriosError.message}`);
+        }
+
+        setStats({
+          totalClientes: clientesCount || 0,
+          mensajesRecientes: mensajesCount || 0,
+          recordatoriosPendientes: recordatoriosCount || 0,
+        });
+      } catch (error: any) {
+        console.error('Error al obtener estadísticas:', error);
+        showError(error.message || 'Error al cargar las estadísticas', 'Error en Dashboard');
+      } finally {
+        setLoading(false);
+      }
+    };
 
     fetchStats();
-  }, []);
+  }, [showError, hideAlert]);
 
   if (loading) {
     return <LoadingIndicator message="Cargando estadísticas..." />;
@@ -81,7 +95,6 @@ const { count: recordatoriosCount, error: recordatoriosError } = await supabase
         </Typography>
 
         <Grid container spacing={3}>
-          {/* Tarjeta de Clientes */}
           <Grid size={{ xs: 12, sm: 6, md: 4 }}>
             <Card>
               <CardContent>
@@ -100,7 +113,6 @@ const { count: recordatoriosCount, error: recordatoriosError } = await supabase
             </Card>
           </Grid>
 
-          {/* Tarjeta de Mensajes */}
           <Grid size={{ xs: 12, sm: 6, md: 4 }}>
             <Card>
               <CardContent>
@@ -119,7 +131,6 @@ const { count: recordatoriosCount, error: recordatoriosError } = await supabase
             </Card>
           </Grid>
 
-          {/* Tarjeta de Recordatorios */}
           <Grid size={{ xs: 12, sm: 6, md: 4 }}>
             <Card>
               <CardContent>
@@ -138,8 +149,7 @@ const { count: recordatoriosCount, error: recordatoriosError } = await supabase
             </Card>
           </Grid>
 
-          {/* Resumen de actividad */}
-          <Grid size={{xs:12}}>
+          <Grid size={{ xs: 12 }}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="h6" gutterBottom>
                 Actividad Reciente

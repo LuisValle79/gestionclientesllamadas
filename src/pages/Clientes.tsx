@@ -54,7 +54,7 @@ const Clientes = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [tabValue, setTabValue] = useState(0);
@@ -67,26 +67,37 @@ const Clientes = () => {
     }
   }, [user]);
 
-  const fetchUserRole = async () => {
-    try {
-      if (!user) throw new Error('Usuario no autenticado');
-      const { data, error } = await supabase
-        .from('perfiles_usuario')
-        .select('rol')
-        .eq('id', user.id)
-        .single();
+const fetchUserRole = async () => {
+  try {
+    if (!user) throw new Error('Usuario no autenticado');
+    const { data, error } = await supabase
+      .from('perfiles_usuario')
+      .select('rol')
+      .eq('id', user.id)
+      .maybeSingle();
 
-      if (error) throw error;
-      setUserRole(data?.rol || null);
-    } catch (error: any) {
-      console.error('Error al obtener rol de usuario:', error.message);
-      setSnackbar({ open: true, message: `Error al obtener rol de usuario: ${error.message}`, severity: 'error' });
-      setUserRole(null);
+    if (error) throw error;
+
+    if (data) {
+      setUserRole(data.rol || 'cliente');
+    } else {
+      // Perfil no encontrado, asigna rol default y crea uno si es necesario
+      setUserRole('cliente');
+      setSnackbar({ open: true, message: 'Perfil no encontrado. Asignado rol "cliente" por default.', severity: 'warning' });
+      // Opcional: Crea el perfil automáticamente
+      await supabase.from('perfiles_usuario').insert([{ id: user.id, rol: 'cliente' }]);
     }
-  };
+  } catch (error: any) {
+    console.error('Error al obtener rol de usuario:', error.message);
+    setSnackbar({ open: true, message: `Error al obtener rol: ${error.message}`, severity: 'error' });
+    setUserRole('cliente'); // Rol default en caso de error
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
-    if (user) {
+    if (user && userRole) {
       fetchClientes();
     }
   }, [filtro, user, userRole]);
@@ -98,8 +109,8 @@ const Clientes = () => {
         .from('clientes')
         .select('*');
 
-      if (user && userRole !== 'administrador') {
-        query = query.eq('created_by', user.id);
+      if (userRole !== 'administrador' && userRole !== 'asesor') {
+        query = query.eq('created_by', user!.id);
       }
 
       if (filtro === 'proxima_llamada') {
@@ -123,17 +134,25 @@ const Clientes = () => {
   };
 
   const handleOpenDialog = (cliente?: Cliente) => {
+    if (userRole === null) {
+      setSnackbar({ open: true, message: 'No tienes permisos para realizar esta acción', severity: 'error' });
+      return;
+    }
     if (cliente) {
       setCurrentCliente(cliente);
       setIsEditing(true);
     } else {
-      setCurrentCliente({});
+      setCurrentCliente({ created_by: user!.id });
       setIsEditing(false);
     }
     setOpenDialog(true);
   };
 
   const handleOpenImportDialog = () => {
+    if (userRole !== 'administrador' && userRole !== 'asesor') {
+      setSnackbar({ open: true, message: 'No tienes permiso para importar clientes', severity: 'error' });
+      return;
+    }
     setOpenImportDialog(true);
     setImportFile(null);
     setImportError(null);
@@ -156,15 +175,12 @@ const Clientes = () => {
   };
 
   const handleDateChange = (field: string, newDate: Date | null) => {
-    if (newDate) {
-      setCurrentCliente({ ...currentCliente, [field]: newDate.toISOString() });
-    } else {
-      setCurrentCliente({ ...currentCliente, [field]: null });
-    }
+    setCurrentCliente({ ...currentCliente, [field]: newDate ? newDate.toISOString() : null });
   };
 
   const handleFiltroChange = (event: SelectChangeEvent<string>) => {
-    setFiltro(event.target.value as string);
+    setFiltro(event.target.value);
+    setPage(0);
   };
 
   const handleSaveCliente = async () => {
@@ -180,17 +196,16 @@ const Clientes = () => {
       return;
     }
     if (currentCliente.telefono && !/^\+?\d{9,15}$/.test(currentCliente.telefono)) {
-      setSnackbar({ open: true, message: 'Formato de teléfono inválido (ej: +51987654321)', severity: 'error' });
+      setSnackbar({ open: true, message: 'Formato de teléfono inválido (9-15 dígitos, ej: +51987654321)', severity: 'error' });
       return;
     }
     if (currentCliente.ruc && !/^\d{11}$/.test(currentCliente.ruc)) {
-      setSnackbar({ open: true, message: 'El RUC debe tener 11 dígitos', severity: 'error' });
+      setSnackbar({ open: true, message: 'El RUC debe tener exactamente 11 dígitos', severity: 'error' });
       return;
     }
 
     try {
       const clienteData = {
-        id: isEditing ? currentCliente.id : crypto.randomUUID(),
         nombre: currentCliente.nombre || null,
         telefono: currentCliente.telefono || null,
         email: currentCliente.email || null,
@@ -215,7 +230,6 @@ const Clientes = () => {
         }
 
         const { error } = await query;
-
         if (error) throw error;
         setSnackbar({ open: true, message: 'Cliente actualizado correctamente', severity: 'success' });
       } else {
@@ -224,13 +238,13 @@ const Clientes = () => {
           .insert([clienteData]);
 
         if (error) throw error;
-        setSnackbar({ open: true, message: 'Cliente agregado correctamente', severity: 'success' });
+        setSnackbar({ open: true, message: 'Cliente creado correctamente', severity: 'success' });
       }
 
       handleCloseDialog();
       fetchClientes();
     } catch (error: any) {
-      console.error('Error al guardar cliente:', error.message);
+      console.error('Error al guardar cliente:', error);
       setSnackbar({
         open: true,
         message: error.message.includes('violates row-level security policy')
@@ -247,15 +261,15 @@ const Clientes = () => {
       return;
     }
 
-    if (!user) {
-      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+    if (!user || (userRole !== 'administrador' && userRole !== 'asesor')) {
+      setSnackbar({ open: true, message: 'No tienes permiso para importar clientes', severity: 'error' });
       return;
     }
 
     try {
       setLoading(true);
       const arrayBuffer = await importFile.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
@@ -279,7 +293,7 @@ const Clientes = () => {
       const telefonoRegex = /^\+?\d{9,15}$/;
       const rucRegex = /^\d{11}$/;
 
-      const clientesData: Partial<Cliente>[] = (jsonData.slice(1) as any[][]).map((row) => {
+      const clientesData: Partial<Cliente>[] = (jsonData.slice(1) as any[][]).map((row, index) => {
         const rowData = row.reduce((acc, value, i) => {
           acc[headers[i]] = value === undefined || value === '' ? null : value;
           return acc;
@@ -288,7 +302,9 @@ const Clientes = () => {
         const validateDate = (date: any) => {
           if (!date) return null;
           let parsedDate: Date;
-          if (typeof date === 'string') {
+          if (date instanceof Date) {
+            parsedDate = date;
+          } else if (typeof date === 'string') {
             parsedDate = new Date(date);
           } else if (typeof date === 'number') {
             parsedDate = XLSX.SSF.parse_date_code(date);
@@ -300,24 +316,23 @@ const Clientes = () => {
 
         // Validaciones
         if (rowData.email && !emailRegex.test(rowData.email)) {
-          throw new Error(`Formato de email inválido en fila: ${rowData.nombre || 'sin nombre'}`);
+          throw new Error(`Formato de email inválido en fila ${index + 2}: ${rowData.nombre || 'sin nombre'}`);
         }
-        if (rowData.telefono && !telefonoRegex.test(rowData.telefono)) {
-          throw new Error(`Formato de teléfono inválido en fila: ${rowData.nombre || 'sin nombre'}`);
+        if (rowData.telefono && !telefonoRegex.test(String(rowData.telefono))) {
+          throw new Error(`Formato de teléfono inválido en fila ${index + 2}: ${rowData.nombre || 'sin nombre'}`);
         }
-        if (rowData.ruc && !rucRegex.test(rowData.ruc)) {
-          throw new Error(`RUC inválido en fila: ${rowData.nombre || 'sin nombre'}`);
+        if (rowData.ruc && !rucRegex.test(String(rowData.ruc))) {
+          throw new Error(`RUC inválido en fila ${index + 2}: ${rowData.nombre || 'sin nombre'}`);
         }
 
         return {
-          id: crypto.randomUUID(),
-          nombre: rowData.nombre || null,
+          nombre: rowData.nombre ? String(rowData.nombre) : null,
           telefono: rowData.telefono ? String(rowData.telefono) : null,
-          email: rowData.email || null,
+          email: rowData.email ? String(rowData.email) : null,
           ruc: rowData.ruc ? String(rowData.ruc) : null,
-          razon_social: rowData.razon_social || null,
-          representante: rowData.representante || null,
-          notas: rowData.notas || null,
+          razon_social: rowData.razon_social ? String(rowData.razon_social) : null,
+          representante: rowData.representante ? String(rowData.representante) : null,
+          notas: rowData.notas ? String(rowData.notas) : null,
           fecha_proxima_llamada: validateDate(rowData.fecha_proxima_llamada),
           fecha_proxima_visita: validateDate(rowData.fecha_proxima_visita),
           fecha_proxima_reunion: validateDate(rowData.fecha_proxima_reunion),
@@ -359,50 +374,49 @@ const Clientes = () => {
       return;
     }
 
-    if (userRole === 'cliente') {
-      setSnackbar({ open: true, message: 'Los clientes no pueden eliminar registros', severity: 'error' });
+    if (userRole !== 'administrador') {
+      setSnackbar({ open: true, message: 'Solo los administradores pueden eliminar clientes', severity: 'error' });
       return;
     }
 
     if (window.confirm('¿Estás seguro de que deseas eliminar este cliente?')) {
       try {
-        let query = supabase
+        const { error } = await supabase
           .from('clientes')
           .delete()
           .eq('id', id);
 
-        if (userRole !== 'administrador') {
-          query = query.eq('created_by', user.id);
-        }
-
-        const { error } = await query;
-
-        if (error) {
-          console.error('Error al eliminar cliente:', error);
-          throw new Error(
-            error.message.includes('violates row-level security policy')
-              ? 'No tienes permiso para eliminar este cliente'
-              : `Error al eliminar cliente: ${error.message}`
-          );
-        }
+        if (error) throw error;
         setSnackbar({ open: true, message: 'Cliente eliminado correctamente', severity: 'success' });
         fetchClientes();
       } catch (error: any) {
-        console.error('Error al eliminar cliente:', error.message);
-        setSnackbar({ open: true, message: error.message, severity: 'error' });
+        console.error('Error al eliminar cliente:', error);
+        setSnackbar({
+          open: true,
+          message: error.message.includes('violates row-level security policy')
+            ? 'No tienes permiso para eliminar este cliente'
+            : `Error al eliminar cliente: ${error.message}`,
+          severity: 'error',
+        });
       }
     }
   };
 
   const handleWhatsAppClick = (telefono: string | null) => {
-    if (!telefono) return;
+    if (!telefono) {
+      setSnackbar({ open: true, message: 'No se proporcionó un número de teléfono', severity: 'error' });
+      return;
+    }
     const numeroLimpio = telefono.replace(/\D/g, '');
     const whatsappUrl = `https://wa.me/${numeroLimpio}`;
     window.open(whatsappUrl, '_blank');
   };
 
   const handlePhoneCall = (telefono: string | null) => {
-    if (!telefono) return;
+    if (!telefono) {
+      setSnackbar({ open: true, message: 'No se proporcionó un número de teléfono', severity: 'error' });
+      return;
+    }
     const numeroLimpio = telefono.replace(/\D/g, '');
     const telUrl = `tel:${numeroLimpio}`;
     window.location.href = telUrl;
@@ -511,17 +525,6 @@ const Clientes = () => {
             </TableCell>
             <TableCell align="center" sx={{ py: 1.5 }}>
               <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                {cliente.telefono && (
-                  <Tooltip title="Enviar WhatsApp">
-                    <IconButton
-                      color="inherit"
-                      sx={{ color: '#25D366', '&:hover': { bgcolor: '#25D366', color: '#fff' } }}
-                      onClick={() => handleWhatsAppClick(cliente.telefono)}
-                    >
-                      <WhatsAppIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                )}
                 <Tooltip title="Editar">
                   <IconButton
                     color="primary"
@@ -536,7 +539,7 @@ const Clientes = () => {
                     color="error"
                     onClick={() => handleDeleteCliente(cliente.id)}
                     sx={{ '&:hover': { bgcolor: theme.palette.error.light, color: '#fff' } }}
-                    disabled={userRole === 'cliente'}
+                    disabled={userRole !== 'administrador'}
                   >
                     <DeleteIcon fontSize="small" />
                   </IconButton>
@@ -701,7 +704,7 @@ const Clientes = () => {
             startIcon={<AddIcon />}
             onClick={() => handleOpenDialog()}
             sx={{ borderRadius: 2, px: 3, py: 1 }}
-            disabled={userRole === null}
+            disabled={userRole === null || userRole === 'cliente'}
           >
             Nuevo Cliente
           </Button>
@@ -866,47 +869,50 @@ const Clientes = () => {
                     autoFocus
                     margin="dense"
                     name="nombre"
-                    label="Nombre"
+                    label="Nombre (opcional)"
                     type="text"
                     fullWidth
                     variant="outlined"
                     value={currentCliente.nombre || ''}
                     onChange={handleInputChange}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    inputProps={{ maxLength: 255 }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
                     margin="dense"
                     name="telefono"
-                    label="Teléfono"
+                    label="Teléfono (opcional)"
                     type="text"
                     fullWidth
                     variant="outlined"
                     value={currentCliente.telefono || ''}
                     onChange={handleInputChange}
-                    helperText="Incluye el código de país (ej: +51987654321)"
+                    helperText="Incluye el código de país, 9-15 dígitos (ej: +51987654321)"
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    inputProps={{ maxLength: 15 }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12 }}>
                   <TextField
                     margin="dense"
                     name="email"
-                    label="Email"
+                    label="Email (opcional)"
                     type="email"
                     fullWidth
                     variant="outlined"
                     value={currentCliente.email || ''}
                     onChange={handleInputChange}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    inputProps={{ maxLength: 255 }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12 }}>
                   <TextField
                     margin="dense"
                     name="notas"
-                    label="Notas"
+                    label="Notas (opcional)"
                     multiline
                     rows={4}
                     fullWidth
@@ -914,6 +920,7 @@ const Clientes = () => {
                     value={currentCliente.notas || ''}
                     onChange={handleInputChange}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    inputProps={{ maxLength: 1000 }}
                   />
                 </Grid>
               </Grid>
@@ -925,39 +932,43 @@ const Clientes = () => {
                   <TextField
                     margin="dense"
                     name="ruc"
-                    label="RUC"
+                    label="RUC (opcional)"
                     type="text"
                     fullWidth
                     variant="outlined"
                     value={currentCliente.ruc || ''}
                     onChange={handleInputChange}
+                    helperText="Debe tener 11 dígitos"
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    inputProps={{ maxLength: 11 }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
                     margin="dense"
                     name="razon_social"
-                    label="Razón Social"
+                    label="Razón Social (opcional)"
                     type="text"
                     fullWidth
                     variant="outlined"
                     value={currentCliente.razon_social || ''}
                     onChange={handleInputChange}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    inputProps={{ maxLength: 255 }}
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField
                     margin="dense"
                     name="representante"
-                    label="Representante Legal"
+                    label="Representante Legal (opcional)"
                     type="text"
                     fullWidth
                     variant="outlined"
                     value={currentCliente.representante || ''}
                     onChange={handleInputChange}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    inputProps={{ maxLength: 255 }}
                   />
                 </Grid>
               </Grid>
@@ -970,7 +981,7 @@ const Clientes = () => {
                     Próxima Llamada
                   </Typography>
                   <DateTimePicker
-                    label="Fecha y hora"
+                    label="Fecha y hora (opcional)"
                     value={currentCliente.fecha_proxima_llamada ? new Date(currentCliente.fecha_proxima_llamada) : null}
                     onChange={(newDate) => handleDateChange('fecha_proxima_llamada', newDate)}
                     sx={{ width: '100%', '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
@@ -981,7 +992,7 @@ const Clientes = () => {
                     Próxima Visita
                   </Typography>
                   <DateTimePicker
-                    label="Fecha y hora"
+                    label="Fecha y hora (opcional)"
                     value={currentCliente.fecha_proxima_visita ? new Date(currentCliente.fecha_proxima_visita) : null}
                     onChange={(newDate) => handleDateChange('fecha_proxima_visita', newDate)}
                     sx={{ width: '100%', '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
@@ -992,7 +1003,7 @@ const Clientes = () => {
                     Próxima Reunión
                   </Typography>
                   <DateTimePicker
-                    label="Fecha y hora"
+                    label="Fecha y hora (opcional)"
                     value={currentCliente.fecha_proxima_reunion ? new Date(currentCliente.fecha_proxima_reunion) : null}
                     onChange={(newDate) => handleDateChange('fecha_proxima_reunion', newDate)}
                     sx={{ width: '100%', '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
@@ -1041,9 +1052,9 @@ const Clientes = () => {
             <Typography variant="body2" component="div" sx={{ pl: 2, color: theme.palette.text.secondary }}>
               <ul style={{ paddingLeft: '20px' }}>
                 <li><strong>nombre</strong>: Nombre del cliente (opcional)</li>
-                <li><strong>telefono</strong>: Teléfono con código de país, ej: +51987654321 (opcional)</li>
+                <li><strong>telefono</strong>: Teléfono con código de país, 9-15 dígitos, ej: +51987654321 (opcional)</li>
                 <li><strong>email</strong>: Correo electrónico (opcional)</li>
-                <li><strong>ruc</strong>: RUC de la empresa, 11 dígitos (opcional)</li>
+                <li><strong>ruc</strong>: RUC de 11 dígitos (opcional)</li>
                 <li><strong>razon_social</strong>: Razón social de la empresa (opcional)</li>
                 <li><strong>representante</strong>: Nombre del representante legal (opcional)</li>
                 <li><strong>notas</strong>: Notas adicionales (opcional)</li>
