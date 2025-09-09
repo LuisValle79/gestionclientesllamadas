@@ -231,7 +231,7 @@ const fetchUserRole = async () => {
         return;
       }
       if (validFiles.length < files.length) {
-        setSnackbar({ open: true, message: 'Solo se permiten archivos PDF o imágenes de hasta 5MB', severity: 'warning' });
+        setSnackbar({ open: true, message: 'Solo se permiten archivos PDF o imágenes de hasta 30MB', severity: 'warning' });
       }
       setSelectedFiles(validFiles);
     }
