@@ -6,6 +6,7 @@ import {
   MenuItem, IconButton, Skeleton, InputAdornment, Fade, Checkbox, FormControlLabel,
   CircularProgress, Chip, useTheme,
 } from '@mui/material';
+import Grid from '@mui/material/Grid';
 import { Send as SendIcon, PersonAdd as PersonAddIcon, Delete as DeleteIcon, Schedule as ScheduleIcon, AttachFile as AttachFileIcon } from '@mui/icons-material';
 import type { SelectChangeEvent } from '@mui/material';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
@@ -34,10 +35,21 @@ type Mensaje = {
   cliente?: Cliente;
 };
 
+type ScheduledMessage = {
+  id: string;
+  cliente_id: string;
+  contenido: string;
+  scheduled_at: string;
+  created_by: string | null;
+  file_url: string | null;
+  cliente?: Cliente;
+};
+
 const Mensajes = () => {
   const theme = useTheme();
   const { user } = useAuth();
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
+  const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [selectedClientes, setSelectedClientes] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
@@ -48,12 +60,16 @@ const Mensajes = () => {
   const [nuevoClienteTelefono, setNuevoClienteTelefono] = useState('');
   const [nuevoClienteRazonSocial, setNuevoClienteRazonSocial] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingScheduled, setLoadingScheduled] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
   const [openDeleteDialog, setOpenDeleteDialog] = useState<string | null>(null);
+  const [openDeleteScheduledDialog, setOpenDeleteScheduledDialog] = useState<string | null>(null);
   const [openScheduleDialog, setOpenScheduleDialog] = useState(false);
   const [scheduledDate, setScheduledDate] = useState<Date | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'warning' });
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [showSentMessages, setShowSentMessages] = useState(false);
+  const [showScheduledMessages, setShowScheduledMessages] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -61,59 +77,66 @@ const Mensajes = () => {
     }
   }, [user]);
 
-const fetchUserRole = async () => {
-  try {
-    if (!user) throw new Error('Usuario no autenticado');
-    const { data, error } = await supabase
-      .from('perfiles_usuario')
-      .select('rol')
-      .eq('id', user.id)
-      .maybeSingle();
+  const fetchUserRole = async () => {
+    try {
+      if (!user) throw new Error('Usuario no autenticado');
+      const { data, error } = await supabase
+        .from('perfiles_usuario')
+        .select('rol')
+        .eq('id', user.id)
+        .maybeSingle();
 
-    if (error) {
-      console.error('Error al consultar perfiles_usuario:', error.message);
-      throw error;
-    }
+      if (error) {
+        console.error('Error al consultar perfiles_usuario:', error.message);
+        throw error;
+      }
 
-    if (!data) {
-      console.warn('Perfil no encontrado para el usuario:', user.id);
-      setUserRole('cliente');
+      if (!data) {
+        console.warn('Perfil no encontrado para el usuario:', user.id);
+        setUserRole('cliente');
+        setSnackbar({
+          open: true,
+          message: 'Perfil de usuario no encontrado. Se asignó el rol cliente por defecto.',
+          severity: 'warning',
+        });
+        return;
+      }
+
+      setUserRole(data.rol || 'cliente');
+    } catch (error: any) {
+      console.error('Error al obtener rol de usuario:', error.message);
       setSnackbar({
         open: true,
-        message: 'Perfil de usuario no encontrado. Se asignó el rol cliente por defecto.',
-        severity: 'warning',
+        message: `Error al obtener rol de usuario: ${error.message}`,
+        severity: 'error',
       });
-      return;
+      setUserRole('cliente');
+    } finally {
+      setLoading(false);
     }
-
-    setUserRole(data.rol || 'cliente');
-  } catch (error: any) {
-    console.error('Error al obtener rol de usuario:', error.message);
-    setSnackbar({
-      open: true,
-      message: `Error al obtener rol de usuario: ${error.message}`,
-      severity: 'error',
-    });
-    setUserRole('cliente');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   useEffect(() => {
     if (user && userRole) {
       fetchClientes();
+      fetchScheduledMessages();
     }
   }, [user, userRole]);
 
   useEffect(() => {
-    if (selectedClientes.length === 1) {
+    if (selectedClientes.length === 1 && showSentMessages) {
       fetchMensajes(selectedClientes[0]);
     } else {
       setMensajes([]);
       setLoading(false);
     }
-  }, [selectedClientes, userRole]);
+    if (showScheduledMessages) {
+      fetchScheduledMessages();
+    } else {
+      setScheduledMessages([]);
+      setLoadingScheduled(false);
+    }
+  }, [selectedClientes, userRole, showSentMessages, showScheduledMessages]);
 
   const isValidUUID = (str: string): boolean => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -204,6 +227,63 @@ const fetchUserRole = async () => {
     }
   };
 
+  const fetchScheduledMessages = async () => {
+    try {
+      setLoadingScheduled(true);
+      if (!user) throw new Error('Usuario no autenticado');
+
+      let query = supabase
+        .from('scheduled_messages')
+        .select(`
+          id,
+          cliente_id,
+          contenido,
+          scheduled_at,
+          created_by,
+          file_url,
+          clientes!scheduled_messages_cliente_id_fkey (id, nombre, telefono, razon_social, created_by)
+        `)
+        .order('scheduled_at', { ascending: true });
+
+      if (userRole === 'cliente' && user) {
+        query = query.eq('clientes.created_by', user.id);
+      } else if (userRole === 'asesor') {
+        query = query.eq('created_by', user.id);
+      }
+
+      if (selectedClientes.length === 1 && isValidUUID(selectedClientes[0])) {
+        query = query.eq('cliente_id', selectedClientes[0]);
+      } else if (selectedClientes.length > 1) {
+        query = query.in('cliente_id', selectedClientes);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      const scheduledMessagesMapped = data?.map((item) => ({
+        id: item.id,
+        cliente_id: item.cliente_id,
+        contenido: item.contenido,
+        scheduled_at: item.scheduled_at,
+        created_by: item.created_by,
+        file_url: item.file_url,
+        cliente: Array.isArray(item.clientes) ? item.clientes[0] : item.clientes,
+      })) || [];
+      setScheduledMessages(scheduledMessagesMapped);
+    } catch (error: any) {
+      console.error('Error al cargar mensajes programados:', error.message);
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para ver estos mensajes programados'
+          : `Error al cargar mensajes programados: ${error.message}`,
+        severity: 'error',
+      });
+    } finally {
+      setLoadingScheduled(false);
+    }
+  };
+
   const handleClienteChange = (event: SelectChangeEvent<string[]>) => {
     const value = event.target.value as string[];
     setSelectedClientes(value);
@@ -226,7 +306,7 @@ const fetchUserRole = async () => {
       const validFiles = Array.from(files).filter(file => 
         (file.type === 'application/pdf' || file.type.startsWith('image/')) && file.size <= 30 * 1024 * 1024 // 30MB max
       );
-      if (validFiles.length > 5) {
+      if (validFiles.length > 1) {
         setSnackbar({ open: true, message: 'Solo se permite un archivo por mensaje', severity: 'error' });
         return;
       }
@@ -290,7 +370,6 @@ const fetchUserRole = async () => {
       return;
     }
 
-    // Validaciones
     const telefonoRegex = /^\+?\d{9,15}$/;
     if (nuevoClienteTelefono && !telefonoRegex.test(nuevoClienteTelefono)) {
       setSnackbar({ open: true, message: 'Formato de teléfono inválido (9-15 dígitos, ej: +51987654321)', severity: 'error' });
@@ -462,11 +541,6 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
       return;
     }
 
-    if (userRole === 'cliente' && selectedClientes.some(id => !clientes.find(c => c.id === id && c.created_by === user.id))) {
-      setSnackbar({ open: true, message: 'No tienes permiso para programar mensajes para estos clientes', severity: 'error' });
-      return;
-    }
-
     try {
       let fileUrl: string | null = null;
       if (selectedFiles.length > 0) {
@@ -474,8 +548,6 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
         if (!fileUrl) return;
       }
 
-      // ADVERTENCIA: La programación de mensajes requiere un backend o función de borde para procesar
-      // los mensajes en la fecha programada. Esta operación solo inserta en scheduled_messages.
       const messagesToInsert = selectedClientes
         .filter(id => isValidUUID(id))
         .map(clienteId => {
@@ -508,6 +580,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
       setScheduledDate(null);
       setOpenScheduleDialog(false);
       setSnackbar({ open: true, message: `Mensajes programados correctamente para ${selectedClientes.length} cliente(s)`, severity: 'success' });
+      fetchScheduledMessages();
     } catch (error: any) {
       console.error('Error al programar mensajes:', error.message);
       setSnackbar({
@@ -517,6 +590,57 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
           : `Error al programar mensajes: ${error.message}`,
         severity: 'error',
       });
+    }
+  };
+
+  const handleDeleteScheduledMessage = async (id: string) => {
+    if (!user) {
+      setSnackbar({ open: true, message: 'Usuario no autenticado', severity: 'error' });
+      return;
+    }
+
+    if (userRole === 'cliente') {
+      setSnackbar({ open: true, message: 'Los clientes no pueden eliminar mensajes programados', severity: 'error' });
+      return;
+    }
+
+    try {
+      const mensaje = scheduledMessages.find(m => m.id === id);
+      if (mensaje?.file_url) {
+        const fileName = mensaje.file_url.split('/').pop();
+        if (fileName) {
+          const { error: storageError } = await supabase.storage.from('message-files').remove([fileName]);
+          if (storageError && !storageError.message.includes('Object not found')) {
+            throw storageError;
+          }
+        }
+      }
+
+      let query = supabase
+        .from('scheduled_messages')
+        .delete()
+        .eq('id', id);
+
+      if (userRole !== 'administrador') {
+        query = query.eq('created_by', user.id);
+      }
+
+      const { error } = await query;
+
+      if (error) throw error;
+      setSnackbar({ open: true, message: 'Mensaje programado eliminado correctamente', severity: 'success' });
+      fetchScheduledMessages();
+    } catch (error: any) {
+      console.error('Error al eliminar mensaje programado:', error.message);
+      setSnackbar({
+        open: true,
+        message: error.message.includes('violates row-level security policy')
+          ? 'No tienes permiso para eliminar este mensaje programado'
+          : `Error al eliminar mensaje programado: ${error.message}`,
+        severity: 'error',
+      });
+    } finally {
+      setOpenDeleteScheduledDialog(null);
     }
   };
 
@@ -655,336 +779,563 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
         mt: 4,
         mb: 4,
         bgcolor: 'background.default',
-        backgroundImage: 'linear-gradient(135deg, rgba(33, 150, 243, 0.05), rgba(0, 150, 136, 0.05))',
-        p: { xs: 2, sm: 3 },
+        p: { xs: 2, sm: 3, md: 4 },
         borderRadius: 2,
         boxShadow: theme.shadows[3],
+        backgroundImage: 'linear-gradient(135deg, rgba(33, 150, 243, 0.05), rgba(0, 150, 136, 0.05))',
       }}
     >
       <Typography
         variant="h4"
         component="h1"
         gutterBottom
-        sx={{ fontWeight: 700, color: 'primary.main', mb: 4 }}
+        sx={{
+          fontWeight: 700,
+          color: 'primary.main',
+          mb: { xs: 3, sm: 4 },
+          textAlign: { xs: 'center', sm: 'left' },
+        }}
       >
         Mensajes
       </Typography>
 
-      {/* Client Selection */}
-      <Box sx={{ mb: 4 }}>
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={selectAll}
-              onChange={handleSelectAllChange}
-              color="primary"
-              aria-label="Seleccionar todos los clientes"
-              disabled={userRole === null || clientes.length === 0}
-            />
-          }
-          label="Seleccionar todos los clientes"
-          sx={{ mb: 2 }}
-        />
-        <FormControl fullWidth variant="outlined">
-          <InputLabel id="cliente-select-label">Seleccionar Clientes</InputLabel>
-          <Select
-            labelId="cliente-select-label"
-            id="cliente-select"
-            multiple
-            value={selectedClientes}
-            onChange={handleClienteChange}
-            label="Seleccionar Clientes"
-            aria-label="Seleccionar clientes"
-            sx={{
-              bgcolor: 'background.paper',
-              '& .MuiSelect-select': { py: 1.5 },
-              borderRadius: 2,
-            }}
-            renderValue={(selected) => {
-              if (selected.length === 0) return <em>Seleccione clientes</em>;
-              if (selectAll) return 'Todos los clientes';
-              return selected
-                .map(id => clientes.find(c => c.id === id))
-                .filter((c): c is Cliente => !!c)
-                .map(getClienteDisplayName)
-                .join(', ');
-            }}
-          >
-            {clientes.length > 0 ? (
-              clientes.map((cliente) => (
-                <MenuItem key={cliente.id} value={cliente.id}>
-                  <Checkbox checked={selectedClientes.includes(cliente.id)} />
-                  <ListItemText primary={getClienteDisplayName(cliente)} />
-                </MenuItem>
-              ))
-            ) : (
-              <MenuItem disabled>
-                <em>No hay clientes disponibles</em>
-              </MenuItem>
-            )}
-          </Select>
-        </FormControl>
-        {clientes.length === 0 && !loading && (
-          <Typography color="text.secondary" sx={{ mt: 2 }}>
-            No se encontraron clientes. Agrega un nuevo cliente para comenzar.
-          </Typography>
-        )}
-      </Box>
-
-      {/* Message List (only for single client) */}
-      {selectedClientes.length === 1 && isValidUUID(selectedClientes[0]) && (
-        <Paper
-          sx={{
-            p: 3,
-            maxHeight: '50vh',
-            overflow: 'auto',
-            bgcolor: 'background.paper',
-            boxShadow: theme.shadows[3],
-            borderRadius: 2,
-            transition: 'box-shadow 0.2s ease-in-out',
-            '&:hover': { boxShadow: theme.shadows[5] },
-          }}
-        >
-          {loading ? (
-            <Box sx={{ p: 2 }}>
-              {[...Array(3)].map((_, index) => (
-                <Skeleton key={index} variant="rectangular" height={80} sx={{ mb: 2, borderRadius: 1 }} />
-              ))}
-            </Box>
-          ) : mensajes.length > 0 ? (
-            <List>
-              {mensajes.map((mensaje, index) => (
-                <Fade key={mensaje.id} in>
-                  <Box>
-                    {index > 0 && <Divider variant="inset" component="li" />}
-                    <ListItem
-                      alignItems="flex-start"
-                      sx={{
-                        justifyContent: mensaje.tipo === 'enviado' ? 'flex-end' : 'flex-start',
-                        py: 1.5,
-                        '& .MuiListItemText-root': {
-                          maxWidth: '70%',
-                        },
-                      }}
-                      secondaryAction={
-                        <IconButton
-                          edge="end"
-                          aria-label={`Eliminar mensaje ${mensaje.contenido.slice(0, 20)}...`}
-                          onClick={() => setOpenDeleteDialog(mensaje.id)}
-                          sx={{ color: 'error.main' }}
-                          disabled={userRole === 'cliente' || (userRole === 'asesor' && (!user || mensaje.created_by !== user.id))}
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      }
-                    >
-                      {mensaje.tipo === 'recibido' && (
-                        <ListItemAvatar>
-                          <Avatar sx={{ bgcolor: 'secondary.main' }}>
-                            {mensaje.cliente?.nombre?.charAt(0) || '?'}
-                          </Avatar>
-                        </ListItemAvatar>
-                      )}
-                      <ListItemText
-                        primary={
-                          <>
-                            {mensaje.contenido}
-                            {mensaje.file_url && (
-                              <Box sx={{ mt: 1 }}>
-                                <a href={mensaje.file_url} target="_blank" rel="noopener noreferrer" style={{ color: theme.palette.primary.main }}>
-                                  {mensaje.file_url.endsWith('.pdf') ? 'Ver PDF' : 'Ver Imagen'}
-                                </a>
-                              </Box>
-                            )}
-                          </>
-                        }
-                        secondary={formatDate(mensaje.created_at)}
-                        sx={{
-                          bgcolor: mensaje.tipo === 'enviado' ? 'primary.light' : 'grey.200',
-                          p: 2,
-                          borderRadius: 2,
-                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-                          transition: 'transform 0.2s ease',
-                          '&:hover': { transform: 'scale(1.02)' },
-                        }}
-                      />
-                      {mensaje.tipo === 'enviado' && (
-                        <ListItemAvatar sx={{ ml: 2 }}>
-                          <Avatar sx={{ bgcolor: 'primary.main' }}>Yo</Avatar>
-                        </ListItemAvatar>
-                      )}
-                    </ListItem>
-                  </Box>
-                </Fade>
-              ))}
-            </List>
-          ) : (
-            <Typography align="center" color="text.secondary" sx={{ p: 2 }}>
-              No hay mensajes para mostrar
-            </Typography>
-          )}
-        </Paper>
-      )}
-
-      {/* Message Input (always shown when at least one client is selected) */}
-      {selectedClientes.length > 0 && (
-        <Paper
-          sx={{
-            p: 3,
-            mt: 3,
-            bgcolor: 'background.paper',
-            boxShadow: theme.shadows[3],
-            borderRadius: 2,
-            transition: 'box-shadow 0.2s ease-in-out',
-            '&:hover': { boxShadow: theme.shadows[5] },
-          }}
-        >
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <TextField
-              fullWidth
-              label="Escribe un mensaje"
-              multiline
-              rows={3}
-              variant="outlined"
-              value={nuevoMensaje}
-              onChange={(e) => setNuevoMensaje(e.target.value)}
-              aria-label="Escribe un mensaje"
-              sx={{ bgcolor: 'background.paper', borderRadius: 2 }}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <Typography variant="caption" color="text.secondary">
-                      {nuevoMensaje.length}/1000
-                    </Typography>
-                  </InputAdornment>
-                ),
-              }}
-              inputProps={{ maxLength: 1000 }}
-            />
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-              <Button
-                variant="outlined"
-                component="label"
-                startIcon={<AttachFileIcon />}
-                disabled={uploadingFiles || selectedFiles.length > 0}
-                sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
-                aria-label="Adjuntar archivo"
+      <Grid container spacing={3}>
+        {/* Client Selection and Scheduled Messages */}
+        <Grid size={12}>
+          <Grid container spacing={3}>
+            {/* Client Selection */}
+            <Grid size={12}>
+              <Paper
+                sx={{
+                  p: { xs: 2, sm: 3 },
+                  bgcolor: 'background.paper',
+                  borderRadius: 2,
+                  boxShadow: theme.shadows[2],
+                  transition: 'box-shadow 0.2s ease-in-out',
+                  '&:hover': { boxShadow: theme.shadows[4] },
+                }}
               >
-                Adjuntar archivo
-                <input
-                  type="file"
-                  hidden
-                  accept="image/*,application/pdf"
-                  onChange={handleFileChange}
+                <Typography
+                  variant="h6"
+                  sx={{ fontWeight: 600, mb: 2, color: 'text.primary' }}
+                >
+                  Selección de Clientes
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={selectAll}
+                      onChange={handleSelectAllChange}
+                      color="primary"
+                      aria-label="Seleccionar todos los clientes"
+                      disabled={userRole === null || clientes.length === 0}
+                    />
+                  }
+                  label="Seleccionar todos los clientes"
+                  sx={{ mb: 2, fontWeight: 500 }}
                 />
-              </Button>
-              {uploadingFiles && <CircularProgress size={24} />}
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                {selectedFiles.map((file, index) => (
-                  <Chip
-                    key={index}
-                    label={file.name}
-                    onDelete={() => handleRemoveFile(index)}
-                    sx={{ bgcolor: 'grey.200' }}
-                  />
-                ))}
-              </Box>
-            </Box>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minWidth: 120 }}>
-              <Button
-                variant="contained"
-                color="primary"
-                endIcon={<SendIcon />}
-                onClick={handleEnviarMensaje}
-                disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length === 0 || uploadingFiles}
-                aria-label="Enviar mensaje"
-                sx={{
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  bgcolor: 'primary.main',
-                  '&:hover': { bgcolor: 'primary.dark', transform: 'translateY(-1px)' },
-                  borderRadius: 2,
-                }}
-              >
-                Enviar
-              </Button>
-              <Button
-                variant="outlined"
-                color="secondary"
-                onClick={handleRegistrarMensajeRecibido}
-                disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0]) || uploadingFiles}
-                aria-label="Registrar mensaje recibido"
-                sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
-              >
-                Registrar Recibido
-              </Button>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handleGeneratePersonalizedMessage}
-                disabled={selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0]) || uploadingFiles}
-                aria-label="Ingresar mensaje personalizado"
-                sx={{
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  bgcolor: 'primary.dark',
-                  '&:hover': { bgcolor: 'primary.main', transform: 'translateY(-1px)' },
-                  borderRadius: 2,
-                }}
-              >
-                Mensaje Personalizado
-              </Button>
-              <Button
-                variant="outlined"
-                color="primary"
-                startIcon={<ScheduleIcon />}
-                onClick={() => setOpenScheduleDialog(true)}
-                disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length === 0 || uploadingFiles || userRole === 'cliente'}
-                aria-label="Programar mensaje"
-                sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
-              >
-                Programar
-              </Button>
-            </Box>
-          </Box>
-        </Paper>
-      )}
+                <FormControl fullWidth variant="outlined">
+                  <InputLabel id="cliente-select-label">Seleccionar Clientes</InputLabel>
+                  <Select
+                    labelId="cliente-select-label"
+                    id="cliente-select"
+                    multiple
+                    value={selectedClientes}
+                    onChange={handleClienteChange}
+                    label="Seleccionar Clientes"
+                    aria-label="Seleccionar clientes"
+                    sx={{
+                      bgcolor: 'background.paper',
+                      '& .MuiSelect-select': { py: 1.5 },
+                      borderRadius: 2,
+                    }}
+                    renderValue={(selected) => {
+                      if (selected.length === 0) return <em>Seleccione clientes</em>;
+                      if (selectAll) return 'Todos los clientes';
+                      return selected
+                        .map(id => clientes.find(c => c.id === id))
+                        .filter((c): c is Cliente => !!c)
+                        .map(getClienteDisplayName)
+                        .join(', ');
+                    }}
+                  >
+                    {clientes.length > 0 ? (
+                      clientes.map((cliente) => (
+                        <MenuItem key={cliente.id} value={cliente.id}>
+                          <Checkbox checked={selectedClientes.includes(cliente.id)} />
+                          <ListItemText primary={getClienteDisplayName(cliente)} />
+                        </MenuItem>
+                      ))
+                    ) : (
+                      <MenuItem disabled>
+                        <em>No hay clientes disponibles</em>
+                      </MenuItem>
+                    )}
+                  </Select>
+                </FormControl>
+                {clientes.length === 0 && !loading && (
+                  <Typography color="text.secondary" sx={{ mt: 2, textAlign: 'center' }}>
+                    No se encontraron clientes. Agrega un nuevo cliente para comenzar.
+                  </Typography>
+                )}
+                <Box sx={{ display: 'flex', gap: 1.5, mt: 2, flexWrap: 'wrap', justifyContent: { xs: 'center', sm: 'flex-start' } }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    startIcon={<PersonAddIcon />}
+                    onClick={handleOpenDialog}
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      borderRadius: 2,
+                      px: 3,
+                      py: 1,
+                      '&:hover': { transform: 'translateY(-1px)' },
+                    }}
+                    aria-label="Agregar nuevo cliente"
+                    disabled={userRole === null}
+                  >
+                    Agregar Cliente
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    startIcon={<SendIcon />}
+                    onClick={() => setShowSentMessages(!showSentMessages)}
+                    disabled={selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0])}
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      borderRadius: 2,
+                      px: 3,
+                      py: 1,
+                      bgcolor: showSentMessages ? 'primary.dark' : 'primary.main',
+                      '&:hover': { bgcolor: 'primary.dark', transform: 'translateY(-1px)' },
+                    }}
+                    aria-label={showSentMessages ? 'Ocultar mensajes enviados' : 'Ver mensajes enviados'}
+                  >
+                    {showSentMessages ? 'Ocultar Mensajes Enviados' : 'Ver Mensajes Enviados'}
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    startIcon={<ScheduleIcon />}
+                    onClick={() => setShowScheduledMessages(!showScheduledMessages)}
+                    disabled={selectedClientes.length === 0}
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      borderRadius: 2,
+                      px: 3,
+                      py: 1,
+                      bgcolor: showScheduledMessages ? 'warning.dark' : 'warning.main',
+                      '&:hover': { bgcolor: 'warning.dark', transform: 'translateY(-1px)' },
+                    }}
+                    aria-label={showScheduledMessages ? 'Ocultar mensajes programados' : 'Ver mensajes programados'}
+                  >
+                    {showScheduledMessages ? 'Ocultar Mensajes Programados' : 'Ver Mensajes Programados'}
+                  </Button>
+                </Box>
+              </Paper>
+            </Grid>
+            {/* Scheduled Messages */}
+            <Grid size={12}>
+              {showScheduledMessages && (
+                <Paper
+                  sx={{
+                    p: { xs: 2, sm: 3 },
+                    maxHeight: { xs: '40vh', sm: '50vh' },
+                    overflow: 'auto',
+                    bgcolor: 'background.paper',
+                    borderRadius: 2,
+                    boxShadow: theme.shadows[2],
+                    transition: 'box-shadow 0.2s ease-in-out',
+                    '&:hover': { boxShadow: theme.shadows[4] },
+                  }}
+                >
+                  <Typography
+                    variant="h6"
+                    sx={{ fontWeight: 600, mb: 2, color: 'text.primary' }}
+                  >
+                    Mensajes Programados
+                  </Typography>
+                  {loadingScheduled ? (
+                    <Box sx={{ p: 2 }}>
+                      {[...Array(3)].map((_, index) => (
+                        <Skeleton key={index} variant="rectangular" height={80} sx={{ mb: 2, borderRadius: 1 }} />
+                      ))}
+                    </Box>
+                  ) : scheduledMessages.length > 0 ? (
+                    <List>
+                      {scheduledMessages.map((mensaje, index) => (
+                        <Fade key={mensaje.id} in>
+                          <Box>
+                            {index > 0 && <Divider variant="inset" component="li" />}
+                            <ListItem
+                              alignItems="flex-start"
+                              sx={{
+                                py: 1.5,
+                                '& .MuiListItemText-root': {
+                                  maxWidth: { xs: '85%', sm: '70%' },
+                                },
+                              }}
+                              secondaryAction={
+                                <IconButton
+                                  edge="end"
+                                  aria-label={`Eliminar mensaje programado ${mensaje.contenido.slice(0, 20)}...`}
+                                  onClick={() => setOpenDeleteScheduledDialog(mensaje.id)}
+                                  sx={{ color: 'error.main' }}
+                                  disabled={userRole === 'cliente' || (userRole === 'asesor' && (!user || mensaje.created_by !== user.id))}
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
+                              }
+                            >
+                              <ListItemAvatar>
+                                <Avatar sx={{ bgcolor: 'warning.main', width: 32, height: 32 }}>
+                                  <ScheduleIcon fontSize="small" />
+                                </Avatar>
+                              </ListItemAvatar>
+                              <ListItemText
+                                primary={
+                                  <>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                        {mensaje.cliente?.nombre || `Cliente ${mensaje.cliente_id.slice(0, 8)}...`}
+                                      </Typography>
+                                      <Chip
+                                        label="Programado"
+                                        size="small"
+                                        color="warning"
+                                        sx={{ fontWeight: 500 }}
+                                      />
+                                    </Box>
+                                    <Typography variant="body2" sx={{ mt: 0.5 }}>
+                                      {mensaje.contenido.length > 100 ? `${mensaje.contenido.slice(0, 100)}...` : mensaje.contenido}
+                                    </Typography>
+                                    {mensaje.file_url && (
+                                      <Box sx={{ mt: 1 }}>
+                                        <a href={mensaje.file_url} target="_blank" rel="noopener noreferrer" style={{ color: theme.palette.primary.main, fontSize: '0.9rem' }}>
+                                          {mensaje.file_url.endsWith('.pdf') ? 'Ver PDF' : 'Ver Imagen'}
+                                        </a>
+                                      </Box>
+                                    )}
+                                  </>
+                                }
+                                secondary={`Programado para: ${formatDate(mensaje.scheduled_at)}`}
+                                sx={{
+                                  bgcolor: 'grey.100',
+                                  p: 2,
+                                  borderRadius: 2,
+                                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                                  transition: 'transform 0.2s ease',
+                                  '&:hover': { transform: 'scale(1.02)' },
+                                }}
+                              />
+                            </ListItem>
+                          </Box>
+                        </Fade>
+                      ))}
+                    </List>
+                  ) : (
+                    <Typography align="center" color="text.secondary" sx={{ p: 2 }}>
+                      No hay mensajes programados
+                    </Typography>
+                  )}
+                </Paper>
+              )}
+            </Grid>
+          </Grid>
+        </Grid>
 
-      {/* Placeholder when no clients are selected */}
-      {selectedClientes.length === 0 && (
-        <Paper
-          sx={{
-            p: 4,
-            textAlign: 'center',
-            bgcolor: 'background.paper',
-            boxShadow: theme.shadows[3],
-            borderRadius: 2,
-            transition: 'box-shadow 0.2s ease-in-out',
-            '&:hover': { boxShadow: theme.shadows[5] },
-          }}
-        >
-          <Typography variant="h6" color="text.secondary" gutterBottom>
-            Selecciona al menos un cliente para enviar mensajes
-          </Typography>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<PersonAddIcon />}
-            onClick={handleOpenDialog}
-            sx={{ mt: 2, textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
-            aria-label="Agregar nuevo cliente"
-            disabled={userRole === null}
-          >
-            Agregar Nuevo Cliente
-          </Button>
-        </Paper>
-      )}
+        {/* Sent Messages */}
+        {showSentMessages && selectedClientes.length === 1 && isValidUUID(selectedClientes[0]) && (
+          <Grid size={12}>
+            <Paper
+              sx={{
+                p: { xs: 2, sm: 3 },
+                maxHeight: { xs: '40vh', sm: '50vh' },
+                overflow: 'auto',
+                bgcolor: 'background.paper',
+                borderRadius: 2,
+                boxShadow: theme.shadows[2],
+                transition: 'box-shadow 0.2s ease-in-out',
+                '&:hover': { boxShadow: theme.shadows[4] },
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{ fontWeight: 600, mb: 2, color: 'text.primary' }}
+              >
+                Conversación
+              </Typography>
+              {loading ? (
+                <Box sx={{ p: 2 }}>
+                  {[...Array(3)].map((_, index) => (
+                    <Skeleton key={index} variant="rectangular" height={80} sx={{ mb: 2, borderRadius: 1 }} />
+                  ))}
+                </Box>
+              ) : mensajes.length > 0 ? (
+                <List>
+                  {mensajes.map((mensaje, index) => (
+                    <Fade key={mensaje.id} in>
+                      <Box>
+                        {index > 0 && <Divider variant="inset" component="li" />}
+                        <ListItem
+                          alignItems="flex-start"
+                          sx={{
+                            justifyContent: mensaje.tipo === 'enviado' ? 'flex-end' : 'flex-start',
+                            py: 1.5,
+                            '& .MuiListItemText-root': {
+                              maxWidth: { xs: '85%', sm: '70%' },
+                            },
+                          }}
+                          secondaryAction={
+                            <IconButton
+                              edge="end"
+                              aria-label={`Eliminar mensaje ${mensaje.contenido.slice(0, 20)}...`}
+                              onClick={() => setOpenDeleteDialog(mensaje.id)}
+                              sx={{ color: 'error.main' }}
+                              disabled={userRole === 'cliente' || (userRole === 'asesor' && (!user || mensaje.created_by !== user.id))}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          }
+                        >
+                          {mensaje.tipo === 'recibido' && (
+                            <ListItemAvatar>
+                              <Avatar sx={{ bgcolor: 'secondary.main', width: 32, height: 32 }}>
+                                {mensaje.cliente?.nombre?.charAt(0) || '?'}
+                              </Avatar>
+                            </ListItemAvatar>
+                          )}
+                          <ListItemText
+                            primary={
+                              <>
+                                {mensaje.contenido}
+                                {mensaje.file_url && (
+                                  <Box sx={{ mt: 1 }}>
+                                    <a href={mensaje.file_url} target="_blank" rel="noopener noreferrer" style={{ color: theme.palette.primary.main, fontSize: '0.9rem' }}>
+                                      {mensaje.file_url.endsWith('.pdf') ? 'Ver PDF' : 'Ver Imagen'}
+                                    </a>
+                                  </Box>
+                                )}
+                              </>
+                            }
+                            secondary={formatDate(mensaje.created_at)}
+                            sx={{
+                              bgcolor: mensaje.tipo === 'enviado' ? 'primary.light' : 'grey.100',
+                              p: 2,
+                              borderRadius: 2,
+                              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                              transition: 'transform 0.2s ease',
+                              '&:hover': { transform: 'scale(1.02)' },
+                            }}
+                          />
+                          {mensaje.tipo === 'enviado' && (
+                            <ListItemAvatar sx={{ ml: 2 }}>
+                              <Avatar sx={{ bgcolor: 'primary.main', width: 32, height: 32 }}>Yo</Avatar>
+                            </ListItemAvatar>
+                          )}
+                        </ListItem>
+                      </Box>
+                    </Fade>
+                  ))}
+                </List>
+              ) : (
+                <Typography align="center" color="text.secondary" sx={{ p: 2 }}>
+                  No hay mensajes para mostrar
+                </Typography>
+              )}
+            </Paper>
+          </Grid>
+        )}
+
+        {/* Message Input */}
+        {selectedClientes.length > 0 && (
+          <Grid size={12}>
+            <Paper
+              sx={{
+                p: { xs: 2, sm: 3 },
+                bgcolor: 'background.paper',
+                borderRadius: 2,
+                boxShadow: theme.shadows[2],
+                transition: 'box-shadow 0.2s ease-in-out',
+                '&:hover': { boxShadow: theme.shadows[4] },
+              }}
+            >
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <TextField
+                  fullWidth
+                  label="Escribe un mensaje"
+                  multiline
+                  rows={3}
+                  variant="outlined"
+                  value={nuevoMensaje}
+                  onChange={(e) => setNuevoMensaje(e.target.value)}
+                  aria-label="Escribe un mensaje"
+                  sx={{ bgcolor: 'background.paper', borderRadius: 2 }}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <Typography variant="caption" color="text.secondary">
+                          {nuevoMensaje.length}/1000
+                        </Typography>
+                      </InputAdornment>
+                    ),
+                  }}
+                  inputProps={{ maxLength: 1000 }}
+                />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    startIcon={<AttachFileIcon />}
+                    disabled={uploadingFiles || selectedFiles.length > 0}
+                    sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
+                    aria-label="Adjuntar archivo"
+                  >
+                    Adjuntar archivo
+                    <input
+                      type="file"
+                      hidden
+                      accept="image/*,application/pdf"
+                      onChange={handleFileChange}
+                    />
+                  </Button>
+                  {uploadingFiles && <CircularProgress size={24} />}
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    {selectedFiles.map((file, index) => (
+                      <Chip
+                        key={index}
+                        label={file.name}
+                        onDelete={() => handleRemoveFile(index)}
+                        sx={{ bgcolor: 'grey.200', fontWeight: 500 }}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', justifyContent: { xs: 'center', sm: 'flex-start' } }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    endIcon={<SendIcon />}
+                    onClick={handleEnviarMensaje}
+                    disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length === 0 || uploadingFiles}
+                    aria-label="Enviar mensaje"
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      borderRadius: 2,
+                      px: 3,
+                      py: 1,
+                      '&:hover': { transform: 'translateY(-1px)' },
+                    }}
+                  >
+                    Enviar
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={handleRegistrarMensajeRecibido}
+                    disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0]) || uploadingFiles}
+                    aria-label="Registrar mensaje recibido"
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      borderRadius: 2,
+                      px: 3,
+                      py: 1,
+                    }}
+                  >
+                    Registrar Recibido
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleGeneratePersonalizedMessage}
+                    disabled={selectedClientes.length !== 1 || !isValidUUID(selectedClientes[0]) || uploadingFiles}
+                    aria-label="Ingresar mensaje personalizado"
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      borderRadius: 2,
+                      px: 3,
+                      py: 1,
+                      bgcolor: 'primary.dark',
+                      '&:hover': { bgcolor: 'primary.main', transform: 'translateY(-1px)' },
+                    }}
+                  >
+                    Mensaje Personalizado
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    startIcon={<ScheduleIcon />}
+                    onClick={() => setOpenScheduleDialog(true)}
+                    disabled={(!nuevoMensaje.trim() && selectedFiles.length === 0) || selectedClientes.length === 0 || uploadingFiles || userRole === 'cliente'}
+                    aria-label="Programar mensaje"
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      borderRadius: 2,
+                      px: 3,
+                      py: 1,
+                    }}
+                  >
+                    Programar
+                  </Button>
+                </Box>
+              </Box>
+            </Paper>
+          </Grid>
+        )}
+
+        {/* Placeholder when no clients are selected */}
+        {selectedClientes.length === 0 && (
+          <Grid size={12}>
+            <Paper
+              sx={{
+                p: 4,
+                textAlign: 'center',
+                bgcolor: 'background.paper',
+                borderRadius: 2,
+                boxShadow: theme.shadows[2],
+                transition: 'box-shadow 0.2s ease-in-out',
+                '&:hover': { boxShadow: theme.shadows[4] },
+              }}
+            >
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                Selecciona al menos un cliente para enviar mensajes
+              </Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<PersonAddIcon />}
+                onClick={handleOpenDialog}
+                sx={{
+                  mt: 2,
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  borderRadius: 2,
+                  px: 3,
+                  py: 1,
+                }}
+                aria-label="Agregar nuevo cliente"
+                disabled={userRole === null}
+              >
+                Agregar Nuevo Cliente
+              </Button>
+            </Paper>
+          </Grid>
+        )}
+      </Grid>
 
       {/* Add Client Dialog */}
       <Dialog
         open={openDialog}
         onClose={handleCloseDialog}
-        PaperProps={{ sx: { p: 2, borderRadius: 2 } }}
+        PaperProps={{ sx: { p: 2, borderRadius: 2, maxWidth: 500 } }}
         TransitionComponent={Fade}
       >
         <DialogTitle sx={{ fontWeight: 700, color: 'primary.main' }}>Agregar Nuevo Cliente</DialogTitle>
@@ -1043,7 +1394,7 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
       <Dialog
         open={openScheduleDialog}
         onClose={() => setOpenScheduleDialog(false)}
-        PaperProps={{ sx: { p: 2, borderRadius: 2 } }}
+        PaperProps={{ sx: { p: 2, borderRadius: 2, maxWidth: 500 } }}
         TransitionComponent={Fade}
       >
         <DialogTitle sx={{ fontWeight: 700, color: 'primary.main' }}>Programar Mensaje</DialogTitle>
@@ -1086,11 +1437,11 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
         </DialogActions>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Message Dialog */}
       <Dialog
         open={!!openDeleteDialog}
         onClose={() => setOpenDeleteDialog(null)}
-        PaperProps={{ sx: { p: 2, borderRadius: 2 } }}
+        PaperProps={{ sx: { p: 2, borderRadius: 2, maxWidth: 500 } }}
         TransitionComponent={Fade}
       >
         <DialogTitle sx={{ fontWeight: 700, color: 'error.main' }}>Confirmar Eliminación</DialogTitle>
@@ -1111,6 +1462,38 @@ En EXCELSIUS ayudamos a empresas como ${razonSocial} a optimizar su gestión, re
             variant="contained"
             color="error"
             aria-label="Eliminar mensaje"
+            sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
+          >
+            Eliminar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Scheduled Message Dialog */}
+      <Dialog
+        open={!!openDeleteScheduledDialog}
+        onClose={() => setOpenDeleteScheduledDialog(null)}
+        PaperProps={{ sx: { p: 2, borderRadius: 2, maxWidth: 500 } }}
+        TransitionComponent={Fade}
+      >
+        <DialogTitle sx={{ fontWeight: 700, color: 'error.main' }}>Confirmar Eliminación</DialogTitle>
+        <DialogContent>
+          <Typography>¿Estás seguro de que deseas eliminar este mensaje programado?</Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => setOpenDeleteScheduledDialog(null)}
+            color="inherit"
+            aria-label="Cancelar"
+            sx={{ textTransform: 'none', borderRadius: 2 }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={() => openDeleteScheduledDialog && handleDeleteScheduledMessage(openDeleteScheduledDialog)}
+            variant="contained"
+            color="error"
+            aria-label="Eliminar mensaje programado"
             sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
           >
             Eliminar
