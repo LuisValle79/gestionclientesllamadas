@@ -146,7 +146,7 @@ const AppContent = () => {
         sx={{
           flexGrow: 1,
           p: { xs: 2, md: 3 },
-          ml: { xs: 0, md: '250px' }, // Se ajusta al sidebar en desktop
+          ml: { xs: 0, md: '0px' }, // Se ajusta al sidebar en desktop
           bgcolor: theme.palette.background.paper,
           display: 'flex',
           flexDirection: 'column',
